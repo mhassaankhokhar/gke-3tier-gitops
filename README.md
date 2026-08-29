@@ -67,8 +67,9 @@ becomes the real state and Git becomes fiction.
 also repels GKE's own system pods, which put cluster DNS on preemptible nodes the
 first time it was tried. So anything that must run on the stable pool says so
 with `nodeSelector: { workload: stateful }`. That currently means External
-Secrets, cert-manager, external-dns, Longhorn's storage plane and (later)
-CloudNativePG.
+Secrets, cert-manager, external-dns, Longhorn's UI and driver deployer, and
+(later) CloudNativePG. Longhorn's replica data is placed by node label rather
+than by `nodeSelector` — see below.
 
 **But placement follows the volume's consumer.** Pinning "everything Longhorn
 owns" to the stable pool looked like the safe default and was not. Longhorn
@@ -83,8 +84,33 @@ longhorn-csi-plugin   DESIRED 2   NODE SELECTOR workload=stateful
 The CSI node plugin performs the mount on the node the *consuming* pod runs on.
 RWX exists here for web and api, which run on spot — so the one pool that had to
 be able to mount a Longhorn volume was the only pool that could not, and nothing
-on the stable pool wanted RWX in the first place (Postgres takes RWO). The
-storage plane stays pinned; the client plane must not be.
+on the stable pool wanted RWX in the first place (Postgres takes RWO).
+
+The same mistake had a second layer underneath it. `longhorn-manager` was pinned
+to the stable pool as well, on the reasoning that a node without the manager is
+not a Longhorn node and so cannot hold replicas. True — and it is also why the
+spot pool could still mount nothing after the CSI plugin reached it:
+
+```
+FailedAttachVolume: node.longhorn.io "gke-...-spot-196ee9be-x6f7" not found
+```
+
+Longhorn will not attach a volume to a node it has not registered, RWX included:
+the client only mounts NFS from the share-manager, but the CSI attach still names
+the consuming node. So the manager runs everywhere, and replicas are kept off
+spot one level down — `createDefaultDiskLabeledNodes` plus the
+`node.longhorn.io/create-default-disk` label that the stateful pool carries from
+its Terraform `node_config`. A node with no disk can mount a volume and can never
+store one:
+
+```
+NAME                    READY   DISKS
+...-spot-196ee9be-x6f7      True    map[]
+...-stateful-...-5e9g       True    map[default-disk-...]
+```
+
+Neither layer was found by reading. Both were found by mounting an RWX volume
+from a pod on each pool.
 
 **Anything a replaceable node needs is a DaemonSet with no nodeSelector.** A new
 spot node arrives with nothing but what DaemonSets give it. A nodeSelector that
