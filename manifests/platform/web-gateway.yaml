@@ -1,0 +1,55 @@
+# TLS for the public name, and the Gateway that serves it.
+#
+# Both live in istio-system rather than with the app: an Istio Gateway reads its
+# certificate from a Secret in the namespace its ingress gateway pods run in,
+# not from the namespace of the workload behind it.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gke-3tier-tls
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  secretName: gke-3tier-tls
+  dnsNames:
+    - gke-3tier.mhassankhokhar.site
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: web
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  # Matches the label set on the gateway chart's pods.
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - gke-3tier.mhassankhokhar.site
+      # Port 80 exists only to send people to 443. Serving the site on both
+      # would mean the session cookie — which is marked Secure — silently never
+      # arrives for anyone who typed the bare hostname.
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - gke-3tier.mhassankhokhar.site
+      tls:
+        mode: SIMPLE
+        # The Secret cert-manager writes above. Istio reads it by name from this
+        # namespace; a Secret elsewhere is simply not found, and the listener
+        # comes up serving nothing.
+        credentialName: gke-3tier-tls

@@ -1,0 +1,70 @@
+# The ingress gateway — the only thing in this cluster with a public address.
+#
+# Everything else is reached over the tailnet: Argo CD, Longhorn's UI, the
+# database. This exists because the web tier is meant to be on the internet.
+#
+# Istio's own gateway chart rather than an ingress controller in front of it.
+# istiod is already running, Argo Rollouts drives Istio natively — the api tier's
+# canary already works this way — and one traffic API for both tiers beats two.
+# A separate nginx would add a hop that terminates TLS a second time and knows
+# nothing about the mesh behind it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: gateway
+    targetRevision: 1.30.4
+    helm:
+      releaseName: istio-ingressgateway
+      values: |
+        # The selector every Gateway resource matches on.
+        labels:
+          istio: ingressgateway
+
+        service:
+          annotations:
+            # external-dns already watches Services, so this annotation is the
+            # whole of the DNS setup — it points the name at whatever public
+            # address GCP assigns the load balancer.
+            external-dns.alpha.kubernetes.io/hostname: gke-3tier.mhassankhokhar.site
+
+          # A real cloud load balancer, not NodePort. NodePort only allocates
+          # 30000-32767, so it always needs something else listening on 80/443
+          # in front of it — which on a cloud is another load balancer anyway.
+          type: LoadBalancer
+          ports:
+            # Port 80 exists to redirect to 443, not to serve.
+            - name: http2
+              port: 80
+              targetPort: 8080
+            - name: https
+              port: 443
+              targetPort: 8443
+
+        # On the stable pool. This is the front door: if it is preempted, the
+        # site is down until a replacement registers with the load balancer.
+        nodeSelector:
+          workload: stateful
+
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

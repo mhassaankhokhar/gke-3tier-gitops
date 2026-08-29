@@ -5,12 +5,33 @@ metadata:
   name: web
 automountServiceAccountToken: false
 ---
-apiVersion: apps/v1
-kind: Deployment
+# A Rollout, like api. A new web version can break just as easily, and it is
+# the one users actually see — so it gets the same 20/50/100 walk, with the
+# difference that this traffic arrives from the internet rather than from
+# inside the mesh.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: web
 spec:
   replicas: 2
+  revisionHistoryLimit: 2
+  strategy:
+    canary:
+      canaryService: web-canary
+      stableService: web-stable
+      trafficRouting:
+        istio:
+          virtualService:
+            name: web
+            routes:
+              - primary
+      steps:
+        - setWeight: 20
+        - pause: { duration: 60s }
+        - setWeight: 50
+        - pause: { duration: 60s }
+        - setWeight: 100
   selector:
     matchLabels:
       app: web
@@ -71,6 +92,57 @@ spec:
     - name: http
       port: 80
       targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-stable
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-canary
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+---
+# The public route.
+#
+# Attached to the Gateway in istio-system, so this governs traffic arriving from
+# the internet — unlike the api VirtualService, which has no gateways field and
+# therefore only affects mesh-internal calls.
+#
+# Weights here are the resting state; Argo Rollouts rewrites them on the route
+# named `primary` while a canary runs and settles them back afterwards.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: web
+spec:
+  hosts:
+    - gke-3tier.mhassankhokhar.site
+  gateways:
+    - istio-system/web
+  http:
+    - name: primary
+      route:
+        - destination:
+            host: web-stable
+          weight: 100
+        - destination:
+            host: web-canary
+          weight: 0
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
