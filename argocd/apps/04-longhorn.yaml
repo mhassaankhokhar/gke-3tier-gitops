@@ -42,13 +42,23 @@ spec:
         # nodes it runs on — putting replicas on preemptible nodes means constant
         # rebuilds, which is the opposite of what a storage layer is for.
         #
-        # This pins the STORAGE plane only. A node without longhorn-manager is
-        # not a Longhorn node at all, so this alone is what keeps replicas and
-        # instance-managers off the spot pool — no second setting is needed for
-        # that, and `kubectl get nodes.longhorn.io` lists only the stateful pool.
-        longhornManager:
-          nodeSelector:
-            workload: stateful
+        # longhornManager is deliberately NOT pinned.
+        #
+        # It was, on the reasoning that a node without the manager is not a
+        # Longhorn node and therefore cannot hold replicas. That part is true,
+        # and it is also why nothing on the spot pool could mount a volume:
+        #
+        #   FailedAttachVolume: node.longhorn.io "gke-...-spot-..." not found
+        #
+        # Longhorn will not attach a volume to a node it has not registered, and
+        # that holds for RWX as well — the client only mounts NFS from the
+        # share-manager, but the CSI attach still names the consuming node. So
+        # the manager has to run everywhere the application can run.
+        #
+        # Replicas are kept off spot by createDefaultDiskLabeledNodes below
+        # instead: a node with no disk can mount volumes and can never store
+        # one. Same guarantee, and it no longer costs the spot pool its ability
+        # to mount.
         longhornDriver:
           nodeSelector:
             workload: stateful
