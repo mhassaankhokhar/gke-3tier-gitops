@@ -65,6 +65,13 @@ spec:
       kind: ValidatingWebhookConfiguration
       jsonPointers:
         - /webhooks/0/clientConfig/caBundle
+        # Same class of field, second instance. The chart ships
+        # failurePolicy: Ignore so that a cluster whose istiod is not up yet can
+        # still accept Istio resources; istiod switches it to Fail once it is
+        # ready to validate them. Reverting that would quietly turn off
+        # validation — invalid Istio config would be accepted and simply not
+        # work.
+        - /webhooks/0/failurePolicy
   syncPolicy:
     automated:
       prune: true
