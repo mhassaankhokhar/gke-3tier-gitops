@@ -1,0 +1,38 @@
+# Longhorn's GKE COS node agent — wave 0, before Longhorn itself.
+#
+# Longhorn needs iscsiadm and the iscsi_tcp kernel module on the host. No GKE
+# node image provides them: Longhorn's own docs recommend Ubuntu on GKE "since it
+# contains open-iscsi already", but on a GKE Ubuntu 24.04 node it does not —
+# checked directly on the node. So the requirement is met here instead, by the
+# agent Longhorn ships for exactly this case: it loads the kernel module and runs
+# iscsid in a container.
+#
+# Deployed straight from Longhorn's repository at the same version as the chart,
+# so the two cannot drift apart.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn-prereq
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/longhorn/longhorn.git
+    # Pinned to the tag matching the chart version in 04-longhorn.yaml.
+    targetRevision: v1.12.1
+    path: deploy/prerequisite
+    directory:
+      # The directory holds agents for several platforms — CIFS, SELinux — and
+      # only this one applies here.
+      include: longhorn-gke-cos-node-agent.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

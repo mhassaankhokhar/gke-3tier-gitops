@@ -50,10 +50,11 @@ at once unless told otherwise, and some things must land first:
 |---|---|---|
 | `-2` | cert-manager | provides the Issuers other apps consume |
 | `-1` | external-dns, cluster secrets | need the operator's CRDs and the token it projects |
-| `0` | Longhorn | provides the RWX StorageClass |
-| `1` | CloudNativePG operator | CRDs before any Cluster resource |
-| `2` | Postgres cluster | needs the operator and a StorageClass |
-| `3` | web, api | need the database |
+| `0` | Longhorn GKE COS node agent | installs iscsid, which longhorn-manager needs to start |
+| `1` | Longhorn | provides the RWX StorageClass |
+| `2` | CloudNativePG operator | CRDs before any Cluster resource |
+| `3` | Postgres cluster | needs the operator and a StorageClass |
+| `4` | web, api | need the database |
 
 Set with `argocd.argoproj.io/sync-wave`.
 
@@ -66,6 +67,13 @@ also repels GKE's own system pods, which put cluster DNS on preemptible nodes th
 first time it was tried. So anything that must run on the stable pool says so
 with `nodeSelector: { workload: stateful }`. That currently means External
 Secrets, cert-manager, external-dns, Longhorn and (later) CloudNativePG.
+
+**Longhorn needs a node agent on GKE.** It requires `iscsiadm` and the
+`iscsi_tcp` module on the host, and no GKE node image provides them — Longhorn's
+docs recommend Ubuntu on GKE "since it contains open-iscsi already", but a GKE
+Ubuntu 24.04 node does not have it. The agent Longhorn ships for this case loads
+the module and runs `iscsid` in a container, and is pinned to the same version as
+the chart so the two cannot drift.
 
 **No admin UI is exposed to the internet.** ArgoCD and Longhorn are reached over
 Tailscale. Longhorn's UI in particular ships with no authentication of its own:
