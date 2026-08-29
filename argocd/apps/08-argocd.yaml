@@ -1,0 +1,102 @@
+# Argo CD manages its own chart.
+#
+# Terraform installs Argo CD once, because a GitOps controller cannot install
+# itself, and then stops — its helm_release carries lifecycle.ignore_changes.
+# Everything about how Argo CD actually runs lives here, which is the same rule
+# every other component follows: Terraform owns cloud resources, Git owns what
+# runs inside the cluster.
+#
+# This file exists because that rule was broken. Argo CD's TLS setting and its
+# Service were written into the Terraform module, and turning that Service into
+# a LoadBalancer made `terraform apply` block for ten minutes waiting on an
+# address a mis-tagged tailnet never issued — an infrastructure pipeline failing
+# on a Kubernetes object. As an Application the same mistake is an app stuck in
+# Progressing, retrying, with the pipeline untouched.
+#
+# The self-management caveat, stated rather than discovered: a bad value here is
+# applied by the thing it breaks. Recovery is `helm rollback argocd -n argocd`,
+# not another commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+  annotations:
+    # Last. Syncing this restarts argocd-server, so it should not happen in the
+    # middle of the waves that other components depend on.
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-cd
+    # Same pin as the Terraform seed. They must not drift: Terraform installs
+    # this version on an empty cluster and this Application takes it from there.
+    targetRevision: 10.4.1
+    helm:
+      values: |
+        global:
+          # Argo CD holds the cluster's desired state; on a preemptible node,
+          # reconciliation stops exactly when the node is reclaimed.
+          nodeSelector:
+            workload: stateful
+
+        configs:
+          params:
+            # TLS on. argocd-server reads tls.crt and tls.key from a Secret
+            # named argocd-server-tls in its own namespace and picks up renewals
+            # without restarting, so cert-manager owns the certificate — issued
+            # over DNS-01, because nothing here is reachable from the public
+            # internet for an HTTP challenge. Nothing else terminates TLS: no
+            # ingress controller, no gateway.
+            server.insecure: false
+
+        # One cluster, one operator. HA mode triples the footprint on a node
+        # pool sized for a trial credit.
+        controller:
+          replicas: 1
+        repoServer:
+          replicas: 1
+        applicationSet:
+          replicas: 1
+
+        server:
+          replicas: 1
+
+          # Reachable over the tailnet and nowhere else.
+          #
+          # loadBalancerClass hands the Service to the Tailscale operator rather
+          # than GCP's load balancer controller, so the address is in CGNAT
+          # space: unroutable from the internet, reachable by anyone on the
+          # tailnet. No public ingress, no Funnel, no firewall rule to get wrong
+          # later.
+          service:
+            type: LoadBalancer
+            loadBalancerClass: tailscale
+            annotations:
+              # Pins the proxy pod to the stable pool. The operator applies no
+              # node selector by default, and a preempted proxy is a dropped
+              # admin session at the moment you most need one.
+              tailscale.com/proxy-class: stable-pool
+
+              # The machine name inside the tailnet — what MagicDNS and the
+              # device list show. Distinct from the DNS name below.
+              tailscale.com/hostname: argocd
+
+              # external-dns already watches Services, so this annotation is the
+              # whole of the DNS setup. The record points at a CGNAT address;
+              # Cloudflare accepts those and forces them DNS-only, since there
+              # is nothing to proxy to.
+              external-dns.alpha.kubernetes.io/hostname: argo.mhassankhokhar.site
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      # prune off, deliberately. This Application manages the controller that
+      # performs the prune; a momentary rendering difference would have Argo CD
+      # delete its own Deployment and leave nothing running to put it back.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
