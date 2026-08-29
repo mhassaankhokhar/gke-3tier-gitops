@@ -1,0 +1,42 @@
+# Istio, part 1 of 3: the CRDs and the mesh's cluster-scoped resources.
+#
+# Split across three Applications because the order is real, not cosmetic:
+#
+#   base  →  CRDs and the ClusterRole istiod needs to exist first
+#   cni   →  the node agent that programs pod networking
+#   istiod →  the control plane, which fails to start without base's CRDs
+#
+# Sidecar mode, not ambient. Ambient is lighter — no per-pod Envoy — and would
+# suit a spot pool better, but sidecar is what this project is here to learn:
+# the injection mechanics, Envoy itself, and the startup ordering problems that
+# come with putting a proxy in front of every process.
+#
+# Pinned like everything else. Argo CD reconciles on its own schedule, so an
+# unpinned chart can install something nobody reviewed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-base
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: base
+    targetRevision: 1.30.4
+    helm:
+      values: |
+        defaultRevision: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Istio's CRDs exceed the client-side annotation limit.
+      - ServerSideApply=true

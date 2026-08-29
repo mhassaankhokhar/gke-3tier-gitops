@@ -1,0 +1,61 @@
+# Istio, part 3 of 3: the control plane.
+#
+# Wave 4, after base's CRDs and the CNI agent. istiod will start without the
+# agent, but pods injected before the agent is ready get no iptables rules and
+# their traffic silently bypasses the mesh — mTLS that appears to be on and is
+# not.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istiod
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: istiod
+    targetRevision: 1.30.4
+    helm:
+      values: |
+        global:
+          platform: gke
+
+        pilot:
+          # The control plane holds the mesh's configuration and certificate
+          # authority. On a preemptible node, losing it means new pods cannot
+          # get certificates — so it sits with the other controllers.
+          nodeSelector:
+            workload: stateful
+          # One cluster, one mesh, a trial credit. Sized rather than left at the
+          # chart's defaults, which assume a production cluster.
+          autoscaleEnabled: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+        meshConfig:
+          # Envoy starts before the application container does.
+          #
+          # Without this the app can begin making outbound calls before the
+          # proxy is listening, and those calls fail — as connection refused,
+          # which reads like the callee is down rather than like a startup race.
+          defaultConfig:
+            holdApplicationUntilProxyStarts: true
+          # Access logs to stdout. A mesh whose traffic you cannot see is
+          # harder to reason about than no mesh at all.
+          accessLogFile: /dev/stdout
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

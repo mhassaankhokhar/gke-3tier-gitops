@@ -1,0 +1,49 @@
+# Istio, part 2 of 3: the CNI node agent.
+#
+# Optional in sidecar mode, and installed anyway, for one reason: without it
+# every injected pod gets an `istio-init` container that needs NET_ADMIN and
+# NET_RAW to write the iptables rules that redirect traffic into Envoy. That is
+# a privileged container in every application namespace, and it is incompatible
+# with a `restricted` Pod Security Admission label. The node agent does the same
+# work once per node instead.
+#
+# Two GKE-specific settings, both from Istio's platform prerequisites — neither
+# is a workaround, both are documented:
+#
+#   global.platform=gke   GKE keeps its CNI binaries in a nonstandard location,
+#                         so the chart's default paths do not find them.
+#
+# Setting it does more than fix a path. The chart's GKE profile
+# (files/profile-platform-gke.yaml) also turns on resourceQuotas, because GKE
+# only allows system-node-critical pods in namespaces that define a quota for
+# that priority class and by default only kube-system has one. The agent runs as
+# node-critical, so without that quota its DaemonSet reports desired pods and
+# creates none — no error, no event, just nothing happening. The chart writes
+# the quota, so nothing here should.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-cni
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: cni
+    targetRevision: 1.30.4
+    helm:
+      values: |
+        global:
+          platform: gke
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

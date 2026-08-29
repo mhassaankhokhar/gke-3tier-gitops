@@ -53,9 +53,13 @@ at once unless told otherwise, and some things must land first:
 | `0` | Longhorn GKE COS node agent | installs iscsid, which longhorn-manager needs to start |
 | `1` | Longhorn | provides the RWX StorageClass |
 | `2` | Longhorn storage extras | the RWX class and the NFS module every client node needs |
-| `2` | CloudNativePG operator | CRDs before any Cluster resource |
-| `3` | Postgres cluster | needs the operator and a StorageClass |
-| `4` | web, api | need the database |
+| `2` | istio-base | Istio's CRDs, which istiod will not start without |
+| `3` | istio-cni | programs pod networking before anything is injected |
+| `4` | istiod | the control plane and the mesh's certificate authority |
+| `5` | Argo CD itself | syncing it restarts argocd-server, so it goes last |
+| `6` | CloudNativePG operator | CRDs before any Cluster resource |
+| `7` | Postgres cluster | needs the operator and a StorageClass |
+| `8` | web, api | need the database and the mesh |
 
 Set with `argocd.argoproj.io/sync-wave`.
 
