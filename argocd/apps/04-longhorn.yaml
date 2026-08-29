@@ -63,6 +63,20 @@ spec:
           # Two stateful nodes, so two replicas is the most that can be placed.
           defaultReplicaCount: 2
 
+          # Replica data goes only where the node pool says it may.
+          #
+          # Longhorn otherwise gives every new node a default disk, which makes
+          # it eligible to hold replicas. With this enabled it creates a disk
+          # only on nodes labelled node.longhorn.io/create-default-disk, which
+          # the stateful pool carries from its node_config in Terraform — so a
+          # replacement node arrives with the right answer already.
+          #
+          # This is what allows longhorn-manager to run on the spot pool. It has
+          # to: Longhorn refuses to attach a volume to a node it has not
+          # registered, RWX included, so a pool without the manager cannot mount
+          # anything. Manager everywhere, disks only here.
+          createDefaultDiskLabeledNodes: true
+
           # Set to the empty string, not removed. Removing the key does not
           # clear the setting: Longhorn's docs say that when a setting is
           # absent from the ConfigMap it "will use the default value in
