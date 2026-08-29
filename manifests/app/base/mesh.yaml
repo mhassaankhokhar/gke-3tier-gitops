@@ -1,0 +1,69 @@
+# What the mesh is actually for here: encryption nobody had to write, and
+# authorization written against identity rather than addresses.
+#
+# STRICT, not PERMISSIVE. Permissive accepts plaintext alongside mTLS, which is
+# the right setting while migrating an existing system into a mesh and the wrong
+# one for a namespace that was born inside it — it means "mTLS is on" and "mTLS
+# is enforced" stop being the same statement.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: app
+spec:
+  mtls:
+    mode: STRICT
+---
+# Deny by default. Istio has no implicit deny until an ALLOW policy exists for a
+# workload, so an empty-rule DENY makes the namespace closed and every opening
+# below deliberate.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: app
+spec:
+  {}
+---
+# api accepts calls from web and nothing else.
+#
+# The principal is a service account, not a namespace or an IP: Envoy verifies
+# it from the mTLS certificate, so it cannot be spoofed by a pod that merely
+# sits in the right namespace. A namespace-scoped rule would let anything in
+# `app` — including a debug pod — reach the tier that reaches the database.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: api-allow-web
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app: api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/app/sa/web"]
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/api/*"]
+---
+# redis accepts calls from web only. It carries session data, so anything that
+# can read it can impersonate a logged-in user.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: redis-allow-web
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/app/sa/web"]
+---

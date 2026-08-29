@@ -1,0 +1,18 @@
+# The base: what the application is, without saying which environment it is in.
+#
+# Nothing here names an image tag or a replica count that an environment would
+# want to differ on — those belong to the overlay, which is the only thing the
+# build pipeline edits.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: app
+
+resources:
+  - namespace.yaml
+  - postgres-credentials.yaml
+  - redis.yaml
+  - api.yaml
+  - web.yaml
+  - hpa.yaml
+  - mesh.yaml

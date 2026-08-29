@@ -1,0 +1,44 @@
+# The application itself — wave 8, last, because it needs everything else:
+# the mesh to inject into, Redis and Postgres to talk to, and the images to
+# exist in Artifact Registry.
+#
+# Kustomize rather than a chart. The rule that decides it: what you write
+# yourself is Kustomize, what you consume from others is Helm — which is why
+# Longhorn, Istio and CloudNativePG arrive here as charts and this does not.
+# There is no templating to reason through, and a deploy is a one-line diff in
+# the overlay.
+#
+# The build pipeline in the application repository writes that line. It never
+# talks to the cluster and holds no cluster credentials: it pushes an image,
+# then commits the new tag here, and Argo CD does the deploying.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:mhassaankhokhar/gke-3tier-gitops.git
+    targetRevision: main
+    path: manifests/app/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  ignoreDifferences:
+    # The HPA owns the replica count once it is running. Without this, Argo CD
+    # sees the base's `replicas: 2` against whatever the HPA has scaled to and
+    # scales it back on every sync — fighting the autoscaler, which is
+    # especially visible under the load test this is built for.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

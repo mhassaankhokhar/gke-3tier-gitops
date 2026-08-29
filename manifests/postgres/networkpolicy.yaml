@@ -1,0 +1,45 @@
+# Who may reach the database.
+#
+# Postgres is outside the Istio mesh, so no AuthorizationPolicy can guard it —
+# there is no Envoy in front of it to enforce one. NetworkPolicy is the
+# equivalent here, and it selects on pod labels rather than on a verified mTLS
+# identity, which is a genuine step down from how api and redis are protected.
+# That is the price of keeping the database out of the mesh, and it is stated
+# rather than left as a gap.
+#
+# It lives with Postgres rather than with the app manifests for a concrete
+# reason: the app base applies `namespace: app` to everything it holds, and this
+# was silently rewritten into `app` when it was there — selecting nothing,
+# protecting nothing, while appearing to exist. Caught by rendering the overlay
+# and reading the namespaces back.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-allow-api
+  namespace: database
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: app
+          podSelector:
+            matchLabels:
+              app: api
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Replication and the operator's own connections originate inside the
+    # database namespace; excluding them would break failover.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: database
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system

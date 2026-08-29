@@ -1,0 +1,90 @@
+# The web tier: serves the page, calls the api, keeps sessions in Redis.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: web
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      serviceAccountName: web
+      nodeSelector:
+        workload: stateless
+      containers:
+        - name: web
+          image: web
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: PORT
+              value: "3000"
+            - name: API_HOST
+              value: http://api.app.svc.cluster.local
+            - name: REDIS_URL
+              value: redis://redis.app.svc.cluster.local:6379
+            # Signs the session cookie. Rotating it invalidates every session,
+            # so it is held once in Secret Manager rather than regenerated on
+            # each deploy — a fresh value per rollout would log everyone out.
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: web-session-secret
+                  key: secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: web-session-secret
+  namespace: app
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: web-session-secret
+  data:
+    - secretKey: secret
+      remoteRef:
+        key: web-session-secret

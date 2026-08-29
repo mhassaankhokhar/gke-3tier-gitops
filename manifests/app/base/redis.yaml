@@ -1,0 +1,59 @@
+# Redis, as the web tier's session store.
+#
+# Not decoration: the web tier runs several replicas on preemptible nodes, so
+# in-memory sessions break twice over — consecutive requests from one browser
+# land on different replicas, and a reclaimed node takes its replica's sessions
+# with it. Both look like users being randomly logged out.
+#
+# On the stable pool, because it holds state that must outlive any one web pod.
+# One replica and no persistence: sessions are recoverable by logging in again,
+# so a volume would buy little and add a failure mode. Say that out loud rather
+# than letting someone assume durability that is not there.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      nodeSelector:
+        workload: stateful
+      containers:
+        - name: redis
+          image: redis:8.2-alpine
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - containerPort: 6379
+              name: tcp-redis
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    # Named tcp- so Istio treats it as plain TCP rather than sniffing it as
+    # HTTP. An unnamed port in a mesh is protocol-sniffed, and Redis is not
+    # HTTP: the sniffing succeeds at guessing wrong.
+    - name: tcp-redis
+      port: 6379
+      targetPort: 6379

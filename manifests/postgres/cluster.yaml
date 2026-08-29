@@ -48,10 +48,18 @@ spec:
 
   bootstrap:
     initdb:
-      # No secret is supplied, so the operator generates the application user's
-      # password itself. That is the better answer here: the password then never
-      # exists outside the cluster — not in Git, not in Secret Manager, not in
-      # anyone's terminal history. The api Deployment reads it from the Secret
-      # the operator creates.
       database: app
       owner: app
+      # The password is supplied rather than generated, and not by preference.
+      #
+      # The operator will generate one, but it lands in a Secret in this
+      # namespace only, and a Kubernetes Secret cannot be read across
+      # namespaces — so the api pods in `app` would have no way to reach it.
+      # Held in Secret Manager instead and projected into both namespaces by
+      # External Secrets, which is how the Cloudflare token and the Argo CD
+      # deploy key already work.
+      #
+      # The secret must be kubernetes.io/basic-auth and its username must equal
+      # the owner above.
+      secret:
+        name: postgres-app-credentials

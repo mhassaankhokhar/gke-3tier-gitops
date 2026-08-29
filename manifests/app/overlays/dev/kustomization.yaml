@@ -1,0 +1,23 @@
+# The dev overlay — and the one file CI writes to.
+#
+# `kustomize edit set image` rewrites the `newName`/`newTag` pairs below, so a
+# deploy is a one-line commit here rather than an edit anywhere in the base.
+# That is the whole contract between the build pipeline and this repository:
+# the pipeline names an image, and Argo CD does the deploying.
+#
+# The tags are exact commit SHAs, never `latest`. A moving tag means the
+# cluster's contents stop being a function of this repository — two syncs of the
+# same commit could run different code.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: web
+    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
+    newTag: PLACEHOLDER
+  - name: api
+    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
+    newTag: PLACEHOLDER

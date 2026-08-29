@@ -1,0 +1,75 @@
+# Autoscaling for the two stateless tiers.
+#
+# maxReplicas is deliberately low. A runaway HPA on a trial credit is a real way
+# to lose the credit, and the spot pool's own autoscaler tops out at 3 nodes —
+# asking for more replicas than the pool can hold produces pending pods, not
+# capacity.
+#
+# The behaviour block is not decoration. Kubernetes' defaults scale down after a
+# 5-minute stabilisation window and scale up fast, which under a load test looks
+# like the HPA overshooting and then oscillating. Scaling up quickly and down
+# slowly is what you want for request-serving tiers: adding a pod too early
+# costs a little, removing one too early costs errors.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
