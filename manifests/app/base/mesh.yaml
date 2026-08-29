@@ -67,3 +67,29 @@ spec:
         - source:
             principals: ["cluster.local/ns/app/sa/web"]
 ---
+---
+# web accepts calls from the ingress gateway, and only from it.
+#
+# Without this the site returns 403 from the deny-all above, with Envoy logging
+# `rbac_access_denied_matched_policy[none]` — no ALLOW matched, so the default
+# denied it. That is the policy working, not failing: opening the front door is
+# as deliberate as opening any other.
+#
+# Note it is still a principal, not "anything from istio-system": only the
+# gateway's own identity may reach web, so another workload in that namespace
+# cannot bypass the gateway and call the app directly.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: web-allow-gateway
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app: web
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway"]
+
