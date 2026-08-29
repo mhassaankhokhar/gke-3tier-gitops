@@ -37,6 +37,25 @@ spec:
       values: |
         global:
           platform: gke
+
+        # Set explicitly, because the chart's autodetection cannot work here.
+        #
+        # It decides the path from the API server's version string:
+        #
+        #   $detectedBinDir := (.Capabilities.KubeVersion.GitVersion
+        #                        | contains "-gke") ? "/home/kubernetes/bin"
+        #                                           : "/opt/cni/bin"
+        #
+        # Argo CD renders charts with `helm template`, where KubeVersion is not
+        # the live cluster's, so the "-gke" in v1.35.6-gke.1710000 never reaches
+        # the template. It fell through to /opt/cni/bin, which on
+        # Container-Optimized OS is read-only, and the agent crashlooped on
+        # every node with "read-only file system" — while the GKE profile had in
+        # fact loaded, as its ResourceQuota proved.
+        #
+        # A rendering-time capability check is not something GitOps can satisfy.
+        # The path is a property of GKE, so it is written down.
+        cniBinDir: /home/kubernetes/bin
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
