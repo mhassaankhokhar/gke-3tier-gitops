@@ -1,0 +1,72 @@
+# Loads the NFS client kernel module on every node.
+#
+# Longhorn serves an RWX volume by running an NFSv4 server in a share-manager
+# pod; the consuming node mounts it as an ordinary NFS client. So every node a
+# workload might land on needs `nfs`/`nfsv4` in the kernel.
+#
+# On GKE's Container-Optimized OS the module ships but is not loaded, and
+# nothing loads it:
+#
+#   $ grep -i nfs /proc/filesystems          → nothing
+#   $ ls /lib/modules/6.12.85+/kernel/fs/nfs → nfs.ko  nfsv3.ko  nfsv4.ko
+#   $ modprobe nfs                           → works, nfs and nfs4 appear
+#
+# Longhorn's own GKE COS node agent does not cover this — its entrypoint loads
+# `iscsi_tcp` and nothing else. Verified by reading the script it runs, not by
+# assuming that "the prerequisite DaemonSet" means every prerequisite.
+#
+# A DaemonSet with NO nodeSelector, deliberately. The spot pool is replaced
+# whenever Google reclaims a node, and a DaemonSet is the only thing a brand
+# new node picks up on its own — a nodeSelector here would recreate exactly the
+# bug this repository already hit once with longhorn-csi-plugin.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nfs-module-loader
+  namespace: longhorn-system
+spec:
+  selector:
+    matchLabels:
+      app: nfs-module-loader
+  template:
+    metadata:
+      labels:
+        app: nfs-module-loader
+    spec:
+      # Every node, whatever it is tainted with: a node that cannot mount is a
+      # node the application cannot run on.
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: modprobe
+          image: busybox:1.37
+          # Load, then idle. A DaemonSet needs a process to stay alive, and the
+          # module survives for the life of the node once loaded.
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              modprobe nfs
+              modprobe nfsv4
+              grep -E '^nodev\snfs' /proc/filesystems
+              echo "nfs client modules loaded on $(uname -n)"
+              exec sleep infinity
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_MODULE"]
+          volumeMounts:
+            - name: host-modules
+              mountPath: /lib/modules
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      volumes:
+        - name: host-modules
+          hostPath:
+            path: /lib/modules

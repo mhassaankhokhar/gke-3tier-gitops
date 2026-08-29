@@ -52,6 +52,7 @@ at once unless told otherwise, and some things must land first:
 | `-1` | external-dns, cluster secrets | need the operator's CRDs and the token it projects |
 | `0` | Longhorn GKE COS node agent | installs iscsid, which longhorn-manager needs to start |
 | `1` | Longhorn | provides the RWX StorageClass |
+| `2` | Longhorn storage extras | the RWX class and the NFS module every client node needs |
 | `2` | CloudNativePG operator | CRDs before any Cluster resource |
 | `3` | Postgres cluster | needs the operator and a StorageClass |
 | `4` | web, api | need the database |
@@ -66,7 +67,30 @@ becomes the real state and Git becomes fiction.
 also repels GKE's own system pods, which put cluster DNS on preemptible nodes the
 first time it was tried. So anything that must run on the stable pool says so
 with `nodeSelector: { workload: stateful }`. That currently means External
-Secrets, cert-manager, external-dns, Longhorn and (later) CloudNativePG.
+Secrets, cert-manager, external-dns, Longhorn's storage plane and (later)
+CloudNativePG.
+
+**But placement follows the volume's consumer.** Pinning "everything Longhorn
+owns" to the stable pool looked like the safe default and was not. Longhorn
+classes its CSI driver as a system-managed component, so a single
+`systemManagedComponentsNodeSelector: workload:stateful` also pinned
+`longhorn-csi-plugin`:
+
+```
+longhorn-csi-plugin   DESIRED 2   NODE SELECTOR workload=stateful
+```
+
+The CSI node plugin performs the mount on the node the *consuming* pod runs on.
+RWX exists here for web and api, which run on spot — so the one pool that had to
+be able to mount a Longhorn volume was the only pool that could not, and nothing
+on the stable pool wanted RWX in the first place (Postgres takes RWO). The
+storage plane stays pinned; the client plane must not be.
+
+**Anything a replaceable node needs is a DaemonSet with no nodeSelector.** A new
+spot node arrives with nothing but what DaemonSets give it. A nodeSelector that
+excludes that pool is therefore not a restriction, it is a permanent hole — the
+DaemonSet simply never appears there. This applies to `longhorn-csi-plugin`, the
+COS node agent, and `nfs-module-loader`.
 
 **Longhorn needs a node agent on GKE.** It requires `iscsiadm` and the
 `iscsi_tcp` module on the host, and no GKE node image provides them — Longhorn's
@@ -74,6 +98,13 @@ docs recommend Ubuntu on GKE "since it contains open-iscsi already", but a GKE
 Ubuntu 24.04 node does not have it. The agent Longhorn ships for this case loads
 the module and runs `iscsid` in a container, and is pinned to the same version as
 the chart so the two cannot drift.
+
+It covers iSCSI and nothing else. Its entrypoint runs `modprobe iscsi_tcp`, so
+the *other* host requirement — an NFS client, which every node consuming an RWX
+volume needs — is still unmet: COS ships `nfs.ko` and `nfsv4.ko` but loads
+neither. `nfs-module-loader` in `manifests/longhorn` does that. "The prerequisite
+DaemonSet exists" is not the same as "the prerequisites are met"; the way to tell
+them apart is to read the script it runs.
 
 **No admin UI is exposed to the internet.** ArgoCD and Longhorn are reached over
 Tailscale. Longhorn's UI in particular ships with no authentication of its own:

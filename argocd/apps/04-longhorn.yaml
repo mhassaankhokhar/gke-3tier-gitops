@@ -41,6 +41,11 @@ spec:
         # Pinned to the stable pool. Longhorn replicates volume data across the
         # nodes it runs on — putting replicas on preemptible nodes means constant
         # rebuilds, which is the opposite of what a storage layer is for.
+        #
+        # This pins the STORAGE plane only. A node without longhorn-manager is
+        # not a Longhorn node at all, so this alone is what keeps replicas and
+        # instance-managers off the spot pool — no second setting is needed for
+        # that, and `kubectl get nodes.longhorn.io` lists only the stateful pool.
         longhornManager:
           nodeSelector:
             workload: stateful
@@ -57,8 +62,32 @@ spec:
           v2DataEngine: false
           # Two stateful nodes, so two replicas is the most that can be placed.
           defaultReplicaCount: 2
-          # Only schedule replicas onto the stable pool.
-          systemManagedComponentsNodeSelector: "workload:stateful"
+
+          # systemManagedComponentsNodeSelector is deliberately NOT set here.
+          #
+          # It was, as "workload:stateful", on the assumption that pinning
+          # everything Longhorn owns to the stable pool was the safe default.
+          # It is not: Longhorn's docs class the CSI Driver as a system-managed
+          # component, so that one line also pinned longhorn-csi-plugin, and a
+          # DaemonSet with a nodeSelector does not follow new nodes it excludes.
+          #
+          #   longhorn-csi-plugin   DESIRED 2   NODE SELECTOR workload=stateful
+          #
+          # The CSI node plugin is what performs the mount, on the node the
+          # consuming pod runs on. RWX exists here for the web/api tier, which
+          # runs on spot — so the one pool that had to be able to mount a
+          # Longhorn volume was the only pool that could not. Nothing on the
+          # stateful pool needs RWX at all; Postgres takes RWO.
+          #
+          # The rule this cost: placement follows the volume's CONSUMER, and
+          # anything a replaceable node needs must be a DaemonSet with no
+          # nodeSelector, because that is the only thing a new node gets by
+          # itself.
+          #
+          # Share Manager is system-managed too, and it must NOT drift onto
+          # spot — it is the NFS server for every RWX volume, so preempting it
+          # breaks every client mount. It is pinned per-StorageClass instead,
+          # with shareManagerNodeSelector; see manifests/longhorn.
 
         persistence:
           # NOT the cluster default: pd-balanced stays default so anything that

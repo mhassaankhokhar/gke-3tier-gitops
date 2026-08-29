@@ -1,0 +1,29 @@
+# The RWX class the application tier asks for by name.
+#
+# Not the cluster default, and not Longhorn's own `longhorn` class: this one
+# exists to carry shareManagerNodeSelector, which is the only way to keep the
+# NFS server off the spot pool now that the global
+# systemManagedComponentsNodeSelector is gone (see argocd/apps/04-longhorn.yaml
+# for why it had to go).
+#
+# Share Manager is a system-managed Longhorn component, so without this it is
+# free to schedule anywhere — including a preemptible node. It is the NFS
+# server for the volume, so losing it takes out every client mount at once.
+# Replicas are already confined to the stable pool by longhorn-manager's own
+# placement; this pins the server that fronts them.
+#
+# Format is Longhorn's, not Kubernetes': semicolon-separated `key:value`.
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: longhorn-rwx
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  # Two stateful nodes, so two replicas is the most that can be placed.
+  numberOfReplicas: "2"
+  staleReplicaTimeout: "30"
+  fsType: ext4
+  shareManagerNodeSelector: workload:stateful
