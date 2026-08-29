@@ -1,0 +1,52 @@
+# CloudNativePG — the operator only. The database itself is wave 7.
+#
+# Postgres runs inside the cluster rather than on Cloud SQL, deliberately: the
+# point of this project is Kubernetes, and a managed database moves the
+# interesting half of it out of the cluster. The honest cost is that failover,
+# backups and upgrades become ours to operate — which is the part worth being
+# able to talk about.
+#
+# Not in the Istio mesh. CloudNativePG's own troubleshooting page names Istio
+# sidecars as a cause of connectivity failures — the sidecar makes the network
+# briefly unavailable during startup, which lands on cluster bootstrap and on
+# every failover — and the mesh would add nothing here: CNPG issues its own CA
+# and certificates and defaults both ssl_min_protocol_version and
+# ssl_max_protocol_version to TLSv1.3. Encryption and identity are already
+# there; a sidecar would repeat them and bring its own startup race.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: default
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    targetRevision: 0.29.0
+    helm:
+      values: |
+        # The operator holds the reconciliation loop for the database — it is
+        # what performs failover. On a preemptible node it would be gone exactly
+        # when a failover is most likely.
+        nodeSelector:
+          workload: stateful
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cnpg-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The chart ships the Cluster CRD, which is large.
+      - ServerSideApply=true

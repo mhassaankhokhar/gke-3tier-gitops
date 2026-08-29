@@ -1,0 +1,57 @@
+# The database.
+#
+# Two instances, not three: the stable pool has two nodes, and CloudNativePG's
+# default anti-affinity is `preferred`, so a third would quietly land beside one
+# of the others and add a replica without adding a failure domain.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: database
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+  # Note what is absent: no istio-injection label. See 12-cnpg-operator.yaml —
+  # CNPG names Istio sidecars as a cause of connectivity failures during
+  # startup, and it already does its own TLS.
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: database
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  instances: 2
+
+  # RWO, one volume per instance — not the RWX class Longhorn provides.
+  # Replication belongs to Postgres, which does it properly; a shared
+  # NFS-backed filesystem under a database invites locking and fsync problems.
+  # standard-rwo is GCP's pd-balanced, attached to one node at a time.
+  storage:
+    size: 5Gi
+    storageClass: standard-rwo
+
+  # Both instances on the stable pool. A preempted Postgres is either a
+  # failover or, for the primary, a write outage — and on spot that is a
+  # routine event rather than an incident.
+  affinity:
+    nodeSelector:
+      workload: stateful
+
+  # Sized for a trial credit, and stated rather than defaulted.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  bootstrap:
+    initdb:
+      # No secret is supplied, so the operator generates the application user's
+      # password itself. That is the better answer here: the password then never
+      # exists outside the cluster — not in Git, not in Secret Manager, not in
+      # anyone's terminal history. The api Deployment reads it from the Secret
+      # the operator creates.
+      database: app
+      owner: app

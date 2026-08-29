@@ -1,0 +1,27 @@
+# The Postgres cluster — wave 7, after the operator's CRDs exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:mhassaankhokhar/gke-3tier-gitops.git
+    targetRevision: main
+    path: manifests/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: database
+  syncPolicy:
+    automated:
+      # prune off. Pruning a Cluster resource deletes the database, and a
+      # rendering difference is not a good enough reason for that to happen
+      # unattended. Removing it is a deliberate act.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
