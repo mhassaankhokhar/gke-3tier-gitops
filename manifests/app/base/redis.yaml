@@ -28,7 +28,37 @@ spec:
       containers:
         - name: redis
           image: redis:8.2-alpine
-          args: ["--save", "", "--appendonly", "no"]
+          args:
+            # No persistence: sessions are recoverable by logging in again, so
+            # a volume would buy little and add a failure mode.
+            - "--save"
+            - ""
+            - "--appendonly"
+            - "no"
+            # A ceiling, and a rule for what happens at it.
+            #
+            # connect-redis already sets a TTL on every session from the
+            # cookie's maxAge, so keys expire on their own and this should never
+            # be reached. It is here for when that assumption breaks — a bug
+            # that writes keys without a TTL, or a flood of new sessions. Without
+            # it Redis grows until the container hits its memory limit and is
+            # OOM-killed, which drops every session at once.
+            #
+            # allkeys-lru rather than the default noeviction: noeviction starts
+            # refusing writes instead, so new logins fail while old sessions
+            # survive. Dropping the least-recently-used session is the better
+            # failure — one user re-authenticates instead of nobody being able
+            # to log in.
+            # 64mb against a 128Mi container limit, not 100mb: maxmemory
+            # bounds the dataset, not the process, and Redis needs headroom on
+            # top of it. Sized to the limit exactly, the container gets
+            # OOM-killed before Redis ever evicts — the failure this setting
+            # exists to prevent. A session is a few hundred bytes, so 64mb is
+            # still hundreds of thousands of them.
+            - "--maxmemory"
+            - "64mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
           ports:
             - containerPort: 6379
               name: tcp-redis
