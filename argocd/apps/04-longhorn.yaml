@@ -63,7 +63,15 @@ spec:
           # Two stateful nodes, so two replicas is the most that can be placed.
           defaultReplicaCount: 2
 
-          # systemManagedComponentsNodeSelector is deliberately NOT set here.
+          # Set to the empty string, not removed. Removing the key does not
+          # clear the setting: Longhorn's docs say that when a setting is
+          # absent from the ConfigMap it "will use the default value in
+          # Longhorn or the customized values previously configured", and an
+          # empty string is what actually cleans it up. Deleting the line left
+          # the Setting CR reading workload:stateful with csi-plugin still
+          # pinned, and ArgoCD reported Synced/Healthy throughout — the
+          # manifest was applied, the effect was not.
+          systemManagedComponentsNodeSelector: ""
           #
           # It was, as "workload:stateful", on the assumption that pinning
           # everything Longhorn owns to the stable pool was the safe default.
