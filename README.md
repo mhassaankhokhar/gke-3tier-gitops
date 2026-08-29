@@ -48,7 +48,6 @@ at once unless told otherwise, and some things must land first:
 
 | Wave | What | Why it cannot go later |
 |---|---|---|
-| `-3` | External Secrets Operator | its CRDs must exist before any ExternalSecret is valid |
 | `-2` | cert-manager | provides the Issuers other apps consume |
 | `-1` | external-dns, cluster secrets | need the operator's CRDs and the token it projects |
 | `0` | Longhorn | provides the RWX StorageClass |
@@ -71,6 +70,13 @@ Secrets, cert-manager, external-dns, Longhorn and (later) CloudNativePG.
 **No admin UI is exposed to the internet.** ArgoCD and Longhorn are reached over
 Tailscale. Longhorn's UI in particular ships with no authentication of its own:
 anyone who reaches it can view, back up or delete volumes.
+
+## What is not here
+
+External Secrets Operator, the `ClusterSecretStore`, and the deploy key ArgoCD
+reads this repository with are installed by Terraform in the other repository —
+not because they belong there, but because each one is required in order to read
+*this* repository. Everything past that point lives here.
 
 ## Secrets
 

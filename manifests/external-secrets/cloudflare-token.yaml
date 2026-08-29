@@ -1,27 +1,12 @@
-# Projects the Cloudflare API token from GCP Secret Manager into the cluster.
+# Projects the Cloudflare API token from GCP Secret Manager into the namespaces
+# that consume it.
 #
-# The token is never in Git and never in Terraform state. It lives in Secret
-# Manager; External Secrets reads it using Workload Identity (no key file) and
-# writes a Kubernetes Secret that external-dns and cert-manager consume.
+# The ClusterSecretStore these reference is NOT here — it is installed by
+# Terraform as part of the cluster seed, because External Secrets has to be
+# working before ArgoCD can read this repository at all.
 #
-# Rotating it means adding a new Secret Manager version — nothing here changes,
-# and ESO picks it up on the next refresh.
-apiVersion: external-secrets.io/v1
-kind: ClusterSecretStore
-metadata:
-  name: gcp-secret-manager
-spec:
-  provider:
-    gcpsm:
-      projectID: project-f9515611-f8df-4c08-8cb
-      auth:
-        workloadIdentity:
-          clusterLocation: us-central1-a
-          clusterName: gke-3tier
-          serviceAccountRef:
-            name: external-secrets
-            namespace: external-secrets
----
+# The token is never in Git and never in Terraform state. Rotating it means
+# adding a new Secret Manager version; nothing in this file changes.
 # One ExternalSecret per consuming namespace: a Kubernetes Secret is
 # namespace-scoped, and both external-dns and cert-manager need to read it from
 # their own namespace.
