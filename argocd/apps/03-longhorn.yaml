@@ -1,0 +1,71 @@
+# Longhorn — wave 0. Provides the ReadWriteMany StorageClass.
+#
+# GKE's default pd-balanced is ReadWriteOnce: a volume attaches to one node at a
+# time, so two replicas on different nodes leave the second in
+# FailedAttachVolume. Longhorn fills that gap.
+#
+# NOT used for PostgreSQL. CloudNativePG gives each instance its own RWO volume
+# and replicates at the database layer; Postgres on shared NFS-backed storage
+# invites locking and fsync problems.
+#
+# Longhorn over Filestore (GCP's managed NFS) on purpose: it runs on any cluster,
+# so the same manifests still work on a local k3d cluster after the trial credit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.longhorn.io
+    chart: longhorn
+    targetRevision: 1.12.1
+    helm:
+      values: |
+        # Pinned to the stable pool. Longhorn replicates volume data across the
+        # nodes it runs on — putting replicas on preemptible nodes means constant
+        # rebuilds, which is the opposite of what a storage layer is for.
+        longhornManager:
+          nodeSelector:
+            workload: stateful
+        longhornDriver:
+          nodeSelector:
+            workload: stateful
+        longhornUI:
+          nodeSelector:
+            workload: stateful
+
+        defaultSettings:
+          # Two stateful nodes, so two replicas is the most that can be placed.
+          defaultReplicaCount: 2
+          # Only schedule replicas onto the stable pool.
+          systemManagedComponentsNodeSelector: "workload:stateful"
+
+        persistence:
+          # NOT the cluster default: pd-balanced stays default so anything that
+          # wants RWO (Postgres) gets it without knowing about Longhorn. RWX
+          # workloads ask for this class by name.
+          defaultClass: false
+          defaultClassReplicaCount: 2
+
+        # The UI has no authentication of its own — anyone who reaches it can
+        # view, back up or delete volumes. So no ingress and no LoadBalancer:
+        # it is reached over Tailscale only.
+        ingress:
+          enabled: false
+        service:
+          ui:
+            type: ClusterIP
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

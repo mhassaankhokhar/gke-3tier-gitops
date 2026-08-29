@@ -1,0 +1,11 @@
+.DS_Store
+*.swp
+
+# No credentials belong here — the Cloudflare token comes from Secret Manager
+# via External Secrets. These patterns exist so an accidental file cannot be
+# committed by a `git add -A`.
+*-key.json
+sa-*.json
+gcp-*.json
+*.pem
+kubeconfig

@@ -1,0 +1,46 @@
+# external-dns — wave -1. Watches Ingress and Service objects and writes the
+# matching records into Cloudflare, so DNS is never edited by hand.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/external-dns
+    chart: external-dns
+    targetRevision: 1.21.1
+    helm:
+      values: |
+        provider:
+          name: cloudflare
+        env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                # Projected by External Secrets from Secret Manager — see
+                # manifests/external-secrets/cloudflare-token.yaml
+                name: cloudflare-api-token
+                key: api-token
+        # Only manage records under this zone, and only ones this cluster owns.
+        domainFilters:
+          - mhassankhokhar.site
+        # TXT registry: external-dns writes a companion TXT record marking each
+        # entry as its own. Without it, it cannot tell its records from ones a
+        # human created, and will not delete anything — or worse, would.
+        txtOwnerId: gke-3tier
+        policy: sync
+        nodeSelector:
+          workload: stateful
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

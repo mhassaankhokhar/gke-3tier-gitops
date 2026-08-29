@@ -1,0 +1,60 @@
+# Projects the Cloudflare API token from GCP Secret Manager into the cluster.
+#
+# The token is never in Git and never in Terraform state. It lives in Secret
+# Manager; External Secrets reads it using Workload Identity (no key file) and
+# writes a Kubernetes Secret that external-dns and cert-manager consume.
+#
+# Rotating it means adding a new Secret Manager version — nothing here changes,
+# and ESO picks it up on the next refresh.
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: gcp-secret-manager
+spec:
+  provider:
+    gcpsm:
+      projectID: project-f9515611-f8df-4c08-8cb
+      auth:
+        workloadIdentity:
+          clusterLocation: us-central1-a
+          clusterName: gke-3tier
+          serviceAccountRef:
+            name: external-secrets
+            namespace: external-secrets
+---
+# One ExternalSecret per consuming namespace: a Kubernetes Secret is
+# namespace-scoped, and both external-dns and cert-manager need to read it from
+# their own namespace.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cloudflare-api-token
+  namespace: external-dns
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: cloudflare-api-token
+  data:
+    - secretKey: api-token
+      remoteRef:
+        key: cloudflare-api-token
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cloudflare-api-token
+  namespace: cert-manager
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: cloudflare-api-token
+  data:
+    - secretKey: api-token
+      remoteRef:
+        key: cloudflare-api-token
