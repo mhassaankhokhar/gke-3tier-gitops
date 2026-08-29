@@ -12,12 +12,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: web
-    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
-    newTag: PLACEHOLDER
-  - name: api
-    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
-    newTag: PLACEHOLDER
+- name: api
+  newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
+  newTag: 7de6fded294724b504e02ae0a6b7d2035ff140db
+- name: web
+  newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
+  newTag: 7de6fded294724b504e02ae0a6b7d2035ff140db
