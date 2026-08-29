@@ -32,6 +32,19 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
+  # istiod writes its CA certificate into this webhook after the chart creates
+  # it, and the chart ships no caBundle at all — verified by rendering it. So
+  # the live object always carries a field Git does not, and the Application
+  # sits permanently OutOfSync while being entirely correct.
+  #
+  # Ignored rather than papered over with selfHeal off: selfHeal would keep
+  # blanking the field istiod just wrote, and blanking it breaks validation of
+  # every Istio resource until istiod notices and writes it back.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
   syncPolicy:
     automated:
       prune: true
