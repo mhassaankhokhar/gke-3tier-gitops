@@ -35,27 +35,42 @@ spec:
     targetRevision: 1.30.4
     helm:
       values: |
-        global:
-          platform: gke
-
-        # Set explicitly, because the chart's autodetection cannot work here.
+        # global.platform=gke is deliberately NOT set, even though Istio's GKE
+        # prerequisites tell you to. On this cluster it makes things worse, and
+        # the two settings below are exactly what it would have given us.
         #
-        # It decides the path from the API server's version string:
+        # What the platform profile does is set cniBinDir back to "" so the
+        # chart can autodetect the path, and turn on its ResourceQuota. The
+        # autodetection reads the API server's version:
         #
         #   $detectedBinDir := (.Capabilities.KubeVersion.GitVersion
         #                        | contains "-gke") ? "/home/kubernetes/bin"
         #                                           : "/opt/cni/bin"
         #
-        # Argo CD renders charts with `helm template`, where KubeVersion is not
-        # the live cluster's, so the "-gke" in v1.35.6-gke.1710000 never reaches
-        # the template. It fell through to /opt/cni/bin, which on
-        # Container-Optimized OS is read-only, and the agent crashlooped on
-        # every node with "read-only file system" — while the GKE profile had in
-        # fact loaded, as its ResourceQuota proved.
+        # Argo CD renders with `helm template`, where KubeVersion is not the
+        # live cluster's, so the "-gke" in v1.35.6-gke.1710000 never reaches the
+        # template and it falls through to /opt/cni/bin — read-only on
+        # Container-Optimized OS. The agent crashlooped on all three nodes.
         #
-        # A rendering-time capability check is not something GitOps can satisfy.
-        # The path is a property of GKE, so it is written down.
+        # Setting the platform AND an explicit cniBinDir does not fix it: the
+        # profile wins and blanks the value again. Rendered locally to confirm —
+        #
+        #   cniBinDir alone            -> /home/kubernetes/bin
+        #   platform=gke + cniBinDir   -> /opt/cni/bin
+        #
+        # So the profile is dropped and its two effects are written out. A
+        # rendering-time capability check is not something GitOps can satisfy;
+        # the path is a fixed property of GKE, so it belongs in the manifest.
         cniBinDir: /home/kubernetes/bin
+
+        # The other half of the GKE profile. GKE refuses to schedule
+        # system-node-critical pods into a namespace with no quota for that
+        # priority class — by default only kube-system has one — and this agent
+        # is node-critical. Without it the DaemonSet reports desired pods and
+        # creates none: no error, no event, nothing happening.
+        resourceQuotas:
+          enabled: true
+
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
