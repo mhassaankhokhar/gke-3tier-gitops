@@ -47,9 +47,12 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: api
 spec:
+  # A Rollout, not a Deployment — the HPA scales whatever the canary controller
+  # owns. Left pointing at a Deployment it would silently find nothing and never
+  # scale, which reads as "the HPA is not working" rather than as a wrong ref.
   scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
     name: api
   minReplicas: 2
   maxReplicas: 6

@@ -1,0 +1,42 @@
+# Argo Rollouts — wave 5, before the application that uses it.
+#
+# A Rollout replaces a Deployment for the api tier. A Deployment can only do a
+# rolling update: it swaps pods a few at a time and has no notion of sending a
+# fraction of *traffic* to the new version. A canary is a traffic decision, not
+# a pod-count decision, which is why it needs both this controller and the mesh.
+#
+# Note what this does NOT do: it does not deploy. Argo CD still owns what is in
+# the cluster; Rollouts owns how a new version takes over from the old one once
+# Argo CD has applied it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-rollouts
+    targetRevision: 2.41.1
+    helm:
+      values: |
+        controller:
+          # It drives rollouts and rewrites VirtualService weights; losing it
+          # mid-canary would strand traffic at whatever split it had reached.
+          nodeSelector:
+            workload: stateful
+        dashboard:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-rollouts
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

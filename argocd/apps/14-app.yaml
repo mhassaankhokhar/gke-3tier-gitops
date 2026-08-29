@@ -42,3 +42,16 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/replicas
+    - group: argoproj.io
+      kind: Rollout
+      jsonPointers:
+        - /spec/replicas
+    # Argo Rollouts rewrites these weights as a canary progresses, and writes
+    # them back to 100/0 when it settles. Git holds the resting state; the
+    # in-flight split belongs to the controller. Without this, selfHeal would
+    # reset the weights mid-canary and send all traffic back to stable.
+    - group: networking.istio.io
+      kind: VirtualService
+      jsonPointers:
+        - /spec/http/0/route/0/weight
+        - /spec/http/0/route/1/weight
