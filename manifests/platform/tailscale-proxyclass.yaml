@@ -1,0 +1,22 @@
+# Where the Tailscale proxy pods run.
+#
+# The operator applies no node selector by default, so a proxy would be free to
+# land on the spot pool — and a preempted proxy is a dropped admin session at the
+# moment you most likely need one. These carry the connection itself, not just
+# control traffic, so they go on the stable pool.
+#
+# Referenced by annotation on each Service rather than through the chart's
+# proxyConfig.defaultProxyClass. The default would be evaluated by the operator
+# before this CR can exist — its CRD arrives with the operator — so the ordering
+# is avoided rather than managed.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: stable-pool
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  statefulSet:
+    pod:
+      nodeSelector:
+        workload: stateful

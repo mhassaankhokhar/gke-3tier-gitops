@@ -1,0 +1,50 @@
+# Let's Encrypt, solved over DNS-01.
+#
+# DNS-01 rather than HTTP-01 for one reason: HTTP-01 needs Let's Encrypt to reach
+# the host over the public internet, and nothing here is on the public internet.
+# argo.mhassankhokhar.site resolves to a tailnet address that only tailnet members
+# can route to. DNS-01 proves control of the name through the zone instead, so a
+# genuinely private host still gets a genuinely valid certificate.
+#
+# The Cloudflare token is the same one external-dns uses, projected into this
+# namespace by its own ExternalSecret. It is never in Git.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: to.hassankhokhar@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+---
+# Staging exists so that a misconfigured solver is debugged against a throwaway
+# CA. Let's Encrypt counts failed validations against a rate limit, and running
+# out of them mid-debug turns a five-minute problem into an hour of waiting.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: to.hassankhokhar@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token

@@ -1,0 +1,33 @@
+# The OAuth client the Tailscale operator authenticates with.
+#
+# The operator mints a short-lived auth key per proxy device from these, so they
+# are long-lived credentials and must not be in Git. The chart would happily take
+# them as Helm values — its own values.yaml says "If unset a Secret named
+# operator-oauth must be precreated", which is the door this uses.
+#
+# Key names are fixed by the chart, not chosen here: the operator Deployment
+# reads /oauth/client_id and /oauth/client_secret from the mounted Secret.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailscale
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: operator-oauth
+  namespace: tailscale
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: operator-oauth
+  data:
+    - secretKey: client_id
+      remoteRef:
+        key: tailscale-oauth-client-id
+    - secretKey: client_secret
+      remoteRef:
+        key: tailscale-oauth-client-secret
