@@ -16,3 +16,4 @@ resources:
   - web.yaml
   - hpa.yaml
   - mesh.yaml
+  - destinationrules.yaml

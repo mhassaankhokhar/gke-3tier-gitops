@@ -1,0 +1,184 @@
+# Circuit breaking — the answer to what the load test actually found.
+#
+# Under 5x overload the system did not refuse work, it queued it: p95 reached
+# 21s and one request took 52s. A client waiting a minute for a page is worse
+# off than one told "no" immediately, and a queue that deep also means pods
+# spend their capacity on requests whose callers have already given up.
+#
+# These limits make Envoy shed load instead. Past the pending-request ceiling it
+# returns 503 straight away, so failure is fast and visible rather than slow and
+# ambiguous — and the HPA still sees the CPU, so scaling is unaffected.
+#
+# One rule per host, including the canary pair. A DestinationRule applies to a
+# host, and api, api-stable, api-canary, web-stable and web-canary are five
+# different ones. Protecting only the stable host would leave the canary
+# unprotected exactly when it is taking traffic it has never handled before.
+#
+# The policy is repeated rather than shared through a YAML anchor: anchors do
+# not cross document boundaries, and an anchor that silently resolves to nothing
+# would leave a host with no limits at all.
+
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: api
+spec:
+  host: api
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        # 250ms, not the 30ms often copied around. Same-node connections are
+        # far quicker, but a pod on another node during a scale-up is not — and
+        # a connect timeout that tight turns ordinary jitter into failures.
+        connectTimeout: 250ms
+      http:
+        # The line that matters. With no ceiling, requests queue without limit,
+        # which is exactly how a 52-second response happens. Past 50 waiting,
+        # Envoy returns 503 immediately.
+        http1MaxPendingRequests: 50
+        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
+        # N requests, which spreads load more evenly but throws away HTTP/1.1
+        # keep-alive and pays a handshake far too often at this request rate.
+        maxRequestsPerConnection: 0
+    outlierDetection:
+      # A pod failing repeatedly is pulled from the pool for 30s rather than
+      # being sent more traffic to fail.
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      # Never eject more than half. Without this a widespread fault — a slow
+      # database, say — ejects every pod and turns a degradation into an outage.
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: api-stable
+spec:
+  host: api-stable
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        # 250ms, not the 30ms often copied around. Same-node connections are
+        # far quicker, but a pod on another node during a scale-up is not — and
+        # a connect timeout that tight turns ordinary jitter into failures.
+        connectTimeout: 250ms
+      http:
+        # The line that matters. With no ceiling, requests queue without limit,
+        # which is exactly how a 52-second response happens. Past 50 waiting,
+        # Envoy returns 503 immediately.
+        http1MaxPendingRequests: 50
+        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
+        # N requests, which spreads load more evenly but throws away HTTP/1.1
+        # keep-alive and pays a handshake far too often at this request rate.
+        maxRequestsPerConnection: 0
+    outlierDetection:
+      # A pod failing repeatedly is pulled from the pool for 30s rather than
+      # being sent more traffic to fail.
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      # Never eject more than half. Without this a widespread fault — a slow
+      # database, say — ejects every pod and turns a degradation into an outage.
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: api-canary
+spec:
+  host: api-canary
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        # 250ms, not the 30ms often copied around. Same-node connections are
+        # far quicker, but a pod on another node during a scale-up is not — and
+        # a connect timeout that tight turns ordinary jitter into failures.
+        connectTimeout: 250ms
+      http:
+        # The line that matters. With no ceiling, requests queue without limit,
+        # which is exactly how a 52-second response happens. Past 50 waiting,
+        # Envoy returns 503 immediately.
+        http1MaxPendingRequests: 50
+        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
+        # N requests, which spreads load more evenly but throws away HTTP/1.1
+        # keep-alive and pays a handshake far too often at this request rate.
+        maxRequestsPerConnection: 0
+    outlierDetection:
+      # A pod failing repeatedly is pulled from the pool for 30s rather than
+      # being sent more traffic to fail.
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      # Never eject more than half. Without this a widespread fault — a slow
+      # database, say — ejects every pod and turns a degradation into an outage.
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: web-stable
+spec:
+  host: web-stable
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        # 250ms, not the 30ms often copied around. Same-node connections are
+        # far quicker, but a pod on another node during a scale-up is not — and
+        # a connect timeout that tight turns ordinary jitter into failures.
+        connectTimeout: 250ms
+      http:
+        # The line that matters. With no ceiling, requests queue without limit,
+        # which is exactly how a 52-second response happens. Past 50 waiting,
+        # Envoy returns 503 immediately.
+        http1MaxPendingRequests: 50
+        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
+        # N requests, which spreads load more evenly but throws away HTTP/1.1
+        # keep-alive and pays a handshake far too often at this request rate.
+        maxRequestsPerConnection: 0
+    outlierDetection:
+      # A pod failing repeatedly is pulled from the pool for 30s rather than
+      # being sent more traffic to fail.
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      # Never eject more than half. Without this a widespread fault — a slow
+      # database, say — ejects every pod and turns a degradation into an outage.
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: web-canary
+spec:
+  host: web-canary
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        # 250ms, not the 30ms often copied around. Same-node connections are
+        # far quicker, but a pod on another node during a scale-up is not — and
+        # a connect timeout that tight turns ordinary jitter into failures.
+        connectTimeout: 250ms
+      http:
+        # The line that matters. With no ceiling, requests queue without limit,
+        # which is exactly how a 52-second response happens. Past 50 waiting,
+        # Envoy returns 503 immediately.
+        http1MaxPendingRequests: 50
+        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
+        # N requests, which spreads load more evenly but throws away HTTP/1.1
+        # keep-alive and pays a handshake far too often at this request rate.
+        maxRequestsPerConnection: 0
+    outlierDetection:
+      # A pod failing repeatedly is pulled from the pool for 30s rather than
+      # being sent more traffic to fail.
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      # Never eject more than half. Without this a widespread fault — a slow
+      # database, say — ejects every pod and turns a degradation into an outage.
+      maxEjectionPercent: 50
