@@ -26,7 +26,7 @@ spec:
     # overlays/loadtest pins both tiers to one replica for a per-replica
     # measurement. Switch here, in a commit — patching the live Application
     # does not work: root manages this file and selfHeal reverts it.
-    path: manifests/app/overlays/dev
+    path: manifests/app/overlays/loadtest
   destination:
     server: https://kubernetes.default.svc
     namespace: app
