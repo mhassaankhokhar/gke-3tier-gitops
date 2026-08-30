@@ -21,3 +21,35 @@ images:
 - name: web
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
   newTag: 5c1608cea8e2ed8eec408e7b8d097224fbbafcd6
+
+patches:
+  # dynamicStableScale is a dev concession, not a default worth inheriting —
+  # which is why it is patched here rather than set in the base.
+  #
+  # Without it a canary runs old and new at full size at once, so a rollout
+  # needs roughly double the pods. This node pool cannot fit that: the rollout
+  # deadlocked with new pods Pending and old ones unable to leave. With it, the
+  # stable ReplicaSet scales down as canary traffic rises — at 20% canary,
+  # stable drops to 80% — and the total never exceeds spec.replicas.
+  #
+  # The cost is the reason production should keep the default: aborting a bad
+  # canary means the stable version has already been scaled down, so recovering
+  # full capacity takes as long as starting pods. The default spends spare
+  # capacity to buy an instant rollback, and in production that trade is worth
+  # making. Here there is no spare capacity to spend.
+  - target:
+      group: argoproj.io
+      kind: Rollout
+      name: web
+    patch: |
+      - op: add
+        path: /spec/strategy/canary/dynamicStableScale
+        value: true
+  - target:
+      group: argoproj.io
+      kind: Rollout
+      name: api
+    patch: |
+      - op: add
+        path: /spec/strategy/canary/dynamicStableScale
+        value: true
