@@ -1,0 +1,77 @@
+# The overlay used while measuring per-replica capacity.
+#
+# This exists because of a mistake worth not repeating. To pin the tiers to one
+# replica each, auto-sync was turned off and the live HPAs were patched by hand
+# — which is exactly the thing this repository exists to prevent. The cluster
+# then held a state no file described, and restoring it meant remembering what
+# had been changed.
+#
+# A measurement is a configuration like any other, so it is written down. Point
+# the Application at this path, take the reading, point it back at dev.
+#
+#   kubectl -n argocd patch app app --type merge \
+#     -p '{"spec":{"source":{"path":"manifests/app/overlays/loadtest"}}}'
+#
+# Both tiers are pinned to exactly one replica, and the HPAs to min=max=1, so
+# the number that comes out is per-replica and can be multiplied. Measuring with
+# autoscaling live answers a different question — how the HPA reacts — and the
+# two were being confused.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  # The load generator's identity and its opening through the deny-all
+  # policy. Applied with the overlay and gone with it, rather than by hand
+  # into a live cluster.
+  - k6-access.yaml
+
+images:
+  - name: web
+    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
+    newTag: 7de6fded294724b504e02ae0a6b7d2035ff140db
+  - name: api
+    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
+    newTag: 7de6fded294724b504e02ae0a6b7d2035ff140db
+
+patches:
+  # One replica each. Argo CD ignores /spec/replicas on Rollouts so the HPA can
+  # own it in dev; here the HPA is pinned too, so nothing moves.
+  - target:
+      group: argoproj.io
+      kind: Rollout
+      name: web
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      group: argoproj.io
+      kind: Rollout
+      name: api
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      group: autoscaling
+      kind: HorizontalPodAutoscaler
+      name: web
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 1
+  - target:
+      group: autoscaling
+      kind: HorizontalPodAutoscaler
+      name: api
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 1

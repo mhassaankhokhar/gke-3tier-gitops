@@ -1,0 +1,28 @@
+# The load generator's identity, and the one opening it needs.
+#
+# The app namespace runs STRICT mTLS behind a deny-all policy, so a generator
+# without a sidecar is simply refused — a "load test" from outside the mesh
+# measures nothing but rejections. This gives it an identity Envoy can verify.
+#
+# It lives in the loadtest overlay rather than the base because an extra
+# principal allowed to reach the web tier should exist while a measurement is
+# running and not a minute longer. Previously this was applied by hand with the
+# Job manifest, which meant remembering to delete it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k6
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: web-allow-k6
+spec:
+  selector:
+    matchLabels:
+      app: web
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/app/sa/k6"]
