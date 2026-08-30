@@ -17,12 +17,11 @@ resources:
 images:
 - name: api
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
-  newTag: 5c1608cea8e2ed8eec408e7b8d097224fbbafcd6
+  newTag: 44511fcfd292b11096b1f1891208af3350d22df7
 - name: web
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
-  newTag: 5c1608cea8e2ed8eec408e7b8d097224fbbafcd6
+  newTag: 44511fcfd292b11096b1f1891208af3350d22df7
 
-patches:
   # dynamicStableScale is a dev concession, not a default worth inheriting —
   # which is why it is patched here rather than set in the base.
   #
@@ -37,19 +36,20 @@ patches:
   # full capacity takes as long as starting pods. The default spends spare
   # capacity to buy an instant rollback, and in production that trade is worth
   # making. Here there is no spare capacity to spend.
-  - target:
-      group: argoproj.io
-      kind: Rollout
-      name: web
-    patch: |
-      - op: add
-        path: /spec/strategy/canary/dynamicStableScale
-        value: true
-  - target:
-      group: argoproj.io
-      kind: Rollout
-      name: api
-    patch: |
-      - op: add
-        path: /spec/strategy/canary/dynamicStableScale
-        value: true
+patches:
+- patch: |
+    - op: add
+      path: /spec/strategy/canary/dynamicStableScale
+      value: true
+  target:
+    group: argoproj.io
+    kind: Rollout
+    name: web
+- patch: |
+    - op: add
+      path: /spec/strategy/canary/dynamicStableScale
+      value: true
+  target:
+    group: argoproj.io
+    kind: Rollout
+    name: api
