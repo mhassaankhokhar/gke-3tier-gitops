@@ -59,6 +59,13 @@ spec:
           service:
             type: LoadBalancer
             loadBalancerClass: tailscale
+            # 443, and TLS terminated by Grafana itself. Being on the tailnet
+            # does not decide the scheme — the browser does, and since other
+            # hosts on this domain are HTTPS it tries HTTPS here too, then finds
+            # nothing listening. Serving a real certificate is less work than
+            # arguing with HSTS.
+            port: 443
+            targetPort: 3000
             annotations:
               tailscale.com/proxy-class: stable-pool
               tailscale.com/hostname: grafana
@@ -70,8 +77,19 @@ spec:
             limits:   { memory: 256Mi }
           persistence:
             enabled: false
+          # The certificate cert-manager issues in manifests/platform. Grafana
+          # reads it from the mounted path below.
+          extraSecretMounts:
+            - name: grafana-tls
+              secretName: grafana-tls
+              mountPath: /etc/grafana/certs
+              readOnly: true
+
           grafana.ini:
             server:
+              protocol: https
+              cert_file: /etc/grafana/certs/tls.crt
+              cert_key: /etc/grafana/certs/tls.key
               root_url: https://grafana.mhassankhokhar.site
 
         prometheus:

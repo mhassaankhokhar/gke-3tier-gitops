@@ -53,3 +53,29 @@ spec:
         # namespace; a Secret elsewhere is simply not found, and the listener
         # comes up serving nothing.
         credentialName: gke-3tier-tls
+---
+# Grafana's certificate.
+#
+# Issued even though Grafana is only reachable over the tailnet, for the same
+# reason Argo CD's is: the browser decides the scheme, not the server. Other
+# hosts on this domain are HTTPS, so browsers try HTTPS here too — and a plain
+# HTTP service simply does not answer. Serving a real certificate is less work
+# than arguing with HSTS, and a self-signed one trains people to click through
+# warnings.
+#
+# DNS-01, because Let's Encrypt cannot reach a CGNAT address to validate over
+# HTTP. Proving control of the zone works regardless of where the host lives.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  secretName: grafana-tls
+  dnsNames:
+    - grafana.mhassankhokhar.site
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
