@@ -77,6 +77,26 @@ spec:
             limits:   { memory: 256Mi }
           persistence:
             enabled: false
+          # The probes have to follow the scheme. Grafana now serves HTTPS, and
+          # the chart's default probes speak HTTP — Grafana answered them with
+          # "client sent an HTTP request to an HTTPS server" and a 400, so the
+          # pod never became ready and the old HTTP one kept serving. Changing
+          # a server's protocol without changing what checks it is the same
+          # class of mistake as pointing a probe at an expensive endpoint.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+              scheme: HTTPS
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+              scheme: HTTPS
+            initialDelaySeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 10
+
           # The certificate cert-manager issues in manifests/platform. Grafana
           # reads it from the mounted path below.
           extraSecretMounts:
