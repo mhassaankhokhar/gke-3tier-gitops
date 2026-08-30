@@ -23,11 +23,10 @@ spec:
   source:
     repoURL: git@github.com:mhassaankhokhar/gke-3tier-gitops.git
     targetRevision: main
-    # Pointed at the loadtest overlay while a per-replica measurement runs.
-    # Switch back to overlays/dev when it is done — and switch it here, in a
-    # commit. Patching the live Application does not work: root manages this
-    # file, and selfHeal reverts the patch within a minute.
-    path: manifests/app/overlays/loadtest
+    # overlays/loadtest pins both tiers to one replica for a per-replica
+    # measurement. Switch here, in a commit — patching the live Application
+    # does not work: root manages this file and selfHeal reverts it.
+    path: manifests/app/overlays/dev
   destination:
     server: https://kubernetes.default.svc
     namespace: app

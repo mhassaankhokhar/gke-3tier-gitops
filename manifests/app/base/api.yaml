@@ -100,16 +100,34 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
+          # Readiness checks the dependency: a pod that cannot reach it should
+          # leave the Service. Failing this removes traffic, nothing more.
           readinessProbe:
             httpGet:
-              path: /api/status
+              path: /readyz
               port: 3000
             initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          # Liveness asks only whether the process is alive, and asks it of a
+          # handler that touches nothing else.
+          #
+          # Both probes previously pointed at /api/status — the expensive path,
+          # reaching Postgres. Under load it took 2-5s against the 1s default
+          # timeout, so Kubernetes killed pods that were healthy and merely
+          # busy, and the survivors inherited the load and were killed in turn.
+          # 9 and 11 restarts in a single load test.
           livenessProbe:
             httpGet:
-              path: /api/status
+              path: /healthz
               port: 3000
             initialDelaySeconds: 15
+            periodSeconds: 10
+            # Generous on purpose. A liveness probe exists to catch a wedged
+            # process, not a slow one — and killing a busy pod makes the load
+            # worse, never better.
+            timeoutSeconds: 5
+            failureThreshold: 6
 ---
 apiVersion: v1
 kind: Service
