@@ -17,10 +17,10 @@ resources:
 images:
 - name: api
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
-  newTag: 44511fcfd292b11096b1f1891208af3350d22df7
+  newTag: 472a27fe2809049d306a4b03c66a223c679af069
 - name: web
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
-  newTag: 44511fcfd292b11096b1f1891208af3350d22df7
+  newTag: 472a27fe2809049d306a4b03c66a223c679af069
 
   # dynamicStableScale is a dev concession, not a default worth inheriting —
   # which is why it is patched here rather than set in the base.
