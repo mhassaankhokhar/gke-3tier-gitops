@@ -29,10 +29,10 @@ resources:
 images:
   - name: web
     newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
-    newTag: 5c1608cea8e2ed8eec408e7b8d097224fbbafcd6
+    newTag: 44511fcfd292b11096b1f1891208af3350d22df7
   - name: api
     newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
-    newTag: 5c1608cea8e2ed8eec408e7b8d097224fbbafcd6
+    newTag: 44511fcfd292b11096b1f1891208af3350d22df7
 
 patches:
   # One replica each. Argo CD ignores /spec/replicas on Rollouts so the HPA can
