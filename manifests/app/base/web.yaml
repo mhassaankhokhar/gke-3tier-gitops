@@ -47,23 +47,15 @@ spec:
         - name: web
           image: web
           ports:
-            - containerPort: 3000
+            # 8080, not 80: a port below 1024 needs root or an added
+            # capability, and nginx has no reason to run as root here.
+            - containerPort: 8080
               name: http
-          env:
-            - name: PORT
-              value: "3000"
-            - name: API_HOST
-              value: http://api.app.svc.cluster.local
-            - name: REDIS_URL
-              value: redis://redis.app.svc.cluster.local:6379
-            # Signs the session cookie. Rotating it invalidates every session,
-            # so it is held once in Secret Manager rather than regenerated on
-            # each deploy — a fresh value per rollout would log everyone out.
-            - name: SESSION_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: web-session-secret
-                  key: secret
+          # No environment at all. The API address is not in the bundle —
+          # nginx proxies /api to the api Service, so the client asks its own
+          # origin and one image runs in any environment. The session secret is
+          # gone with the sessions: a SPA and a JSON API have no server-side
+          # session to sign.
           resources:
             requests:
               cpu: 50m
@@ -75,7 +67,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /readyz
-              port: 3000
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -90,7 +82,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 3000
+              port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
             # Generous on purpose. A liveness probe exists to catch a wedged
@@ -109,7 +101,7 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: 3000
+      targetPort: 8080
 ---
 apiVersion: v1
 kind: Service
@@ -121,7 +113,7 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: 3000
+      targetPort: 8080
 ---
 apiVersion: v1
 kind: Service
@@ -133,7 +125,7 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: 3000
+      targetPort: 8080
 ---
 # The public route.
 #
@@ -161,20 +153,3 @@ spec:
         - destination:
             host: web-canary
           weight: 0
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: web-session-secret
-  namespace: app
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: gcp-secret-manager
-    kind: ClusterSecretStore
-  target:
-    name: web-session-secret
-  data:
-    - secretKey: secret
-      remoteRef:
-        key: web-session-secret

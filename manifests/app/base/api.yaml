@@ -94,6 +94,14 @@ spec:
             # this connection is encrypted without the mesh being involved.
             - name: DBSSL
               value: "true"
+            # Redis moved here from the web tier. It was a session store for a
+            # server-rendered page; a SPA talking to a JSON API has no
+            # server-side session, so rather than keep a component with no
+            # purpose it now caches the summary aggregation — three queries
+            # every page load wants. The cache fails open: if Redis is down this
+            # gets slower, not broken.
+            - name: REDIS_URL
+              value: redis://redis.app.svc.cluster.local:6379
           resources:
             requests:
               cpu: 50m

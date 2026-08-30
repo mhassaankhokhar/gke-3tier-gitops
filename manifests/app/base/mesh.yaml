@@ -47,15 +47,23 @@ spec:
             principals: ["cluster.local/ns/app/sa/web"]
       to:
         - operation:
-            methods: ["GET"]
+            # All five verbs now: this is a CRUD API, not a status endpoint.
+            # Left at GET, every create and update would be denied — and the
+            # failure would look like the UI being broken rather than like a
+            # policy.
+            methods: ["GET", "POST", "PATCH", "DELETE"]
             paths: ["/api/*"]
 ---
-# redis accepts calls from web only. It carries session data, so anything that
-# can read it can impersonate a logged-in user.
+# redis accepts calls from api, and nothing else.
+#
+# It used to be web's, as a session store. The tier that talks to it changed
+# when the app did, and the rule had to change with it — a policy naming the
+# wrong principal fails closed, so this would have surfaced as a cache that
+# never worked rather than as a hole.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: redis-allow-web
+  name: redis-allow-api
   namespace: app
 spec:
   selector:
@@ -65,7 +73,7 @@ spec:
   rules:
     - from:
         - source:
-            principals: ["cluster.local/ns/app/sa/web"]
+            principals: ["cluster.local/ns/app/sa/api"]
 ---
 ---
 # web accepts calls from the ingress gateway, and only from it.
