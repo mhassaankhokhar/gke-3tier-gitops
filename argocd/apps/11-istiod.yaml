@@ -22,6 +22,38 @@ spec:
         global:
           platform: gke
 
+          proxy:
+            # 30m, not the chart's 100m.
+            #
+            # Two numbers, and the request sits above both. Measured here over
+            # 24h, every sidecar in the app namespace peaked at 5-10m and sat
+            # at 4m. Istio's own performance page puts a proxy at 0.20 vCPU per
+            # 1000 requests per second, and the highest this tier has actually
+            # served is ~130 rps per replica pair — about 26m by that figure.
+            #
+            # The limit stays at the chart's 2 cores, so nothing is capped at
+            # the request: a burst still gets whatever the node has. What the
+            # request decides is how much the scheduler sets aside and, under
+            # contention, the proxy's share — and at 100m against 4m it was
+            # setting aside 25 times what was ever used. On a 940m e2-medium
+            # that was over a tenth of the node per pod, which is why the spot
+            # pool sat at 80% reserved against roughly 15% used.
+            #
+            # Memory is deliberately unchanged. 128Mi against a measured 53Mi
+            # peak is about 2.4x, and Istio puts a proxy at 60MB at 1000 rps —
+            # this is the resource that actually scales with mesh size, since
+            # each proxy holds the config for everything it can reach.
+            #
+            # Injection-time only: existing pods keep the requests they were
+            # created with until they are replaced.
+            resources:
+              requests:
+                cpu: 30m
+                memory: 128Mi
+              limits:
+                cpu: 2000m
+                memory: 1024Mi
+
         # Tell istiod that the CNI agent is installed.
         #
         # Without this the agent runs on every node and does nothing: istiod
