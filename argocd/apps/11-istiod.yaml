@@ -22,6 +22,30 @@ spec:
         global:
           platform: gke
 
+        # Tell istiod that the CNI agent is installed.
+        #
+        # Without this the agent runs on every node and does nothing: istiod
+        # keeps injecting the `istio-init` container, which applies the iptables
+        # rules itself and therefore needs NET_ADMIN, NET_RAW, uid 0 and a
+        # writable root filesystem — in every application pod. Verified against
+        # the live injector, which carried `pilot.cni.enabled: false` while
+        # `istio-cni-node` sat 5/5 ready.
+        #
+        # With it, the injected init container becomes `istio-validation`,
+        # running `--run-validation --skip-rule-apply`: it checks that the agent
+        # already wrote the redirection and applies nothing. Capabilities drop to
+        # ALL, the filesystem is read-only, and it runs as 1337 rather than root.
+        #
+        # It fails closed. A pod landing on a node whose agent is not ready yet
+        # cannot start, rather than starting outside the mesh — which matters
+        # here because the application tier is on spot nodes that arrive without
+        # warning, and a pod with no redirection would accept plaintext while
+        # STRICT mTLS appeared to be on.
+        #
+        # Only new pods change; existing ones keep the rules they already have.
+        cni:
+          enabled: true
+
         pilot:
           # The control plane holds the mesh's configuration and certificate
           # authority. On a preemptible node, losing it means new pods cannot
