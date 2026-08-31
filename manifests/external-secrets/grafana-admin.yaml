@@ -1,0 +1,53 @@
+# The monitoring namespace, created here rather than only by the chart's
+# CreateNamespace, because the ExternalSecret below lands in it at wave -1 and a
+# namespaced object cannot be created in a namespace that does not exist yet.
+#
+# Same arrangement as istio-system in manifests/platform: the namespace is owned
+# by the app that needs it first, and the chart's own CreateNamespace is
+# idempotent alongside it. A namespace is not something a chart should own — two
+# applications install into this one.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  annotations:
+    # Before the ExternalSecret in this same directory.
+    argocd.argoproj.io/sync-wave: "-2"
+---
+# Grafana's admin login.
+#
+# The chart generates this password itself when none is given, with randAlphaNum
+# and no lookup — so under Argo CD, which renders with `helm template` on every
+# sync, it is a different password every time. Verified by rendering the same
+# chart twice and getting two different values. The symptom is a login that
+# worked yesterday failing today, with nothing in any log to explain it, because
+# nothing failed: the Secret was rewritten and the running pod kept the password
+# it booted with until it too was replaced.
+#
+# So the value lives in Secret Manager, and 17-monitoring.yaml points the chart
+# at this Secret through grafana.admin.existingSecret. The key names below are
+# the chart's defaults (admin.userKey / admin.passwordKey) and must stay as they
+# are unless those values change too.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grafana-admin
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-manager
+    kind: ClusterSecretStore
+  target:
+    name: grafana-admin
+    template:
+      type: Opaque
+      data:
+        admin-user: admin
+        admin-password: "{{ .password }}"
+  data:
+    - secretKey: password
+      remoteRef:
+        key: grafana-admin-password
