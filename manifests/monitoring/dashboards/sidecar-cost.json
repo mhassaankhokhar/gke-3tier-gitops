@@ -1,0 +1,508 @@
+{
+  "title": "Mesh — Sidecar Cost",
+  "uid": "sidecar-cost",
+  "tags": [
+    "istio",
+    "capacity"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "description": "What the mesh costs, measured rather than argued. The sidecar-vs-ambient decision in docs/service-mesh-sidecar-strategy.md rests on these numbers, so they are on a dashboard instead of in a paragraph.",
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(kube_pod_init_container_resource_requests{container=\"istio-proxy\"}, namespace)",
+        "current": {
+          "text": "app",
+          "value": "app"
+        },
+        "refresh": 2,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "The gap between what a proxy asks for and what it uses",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Sidecar CPU reserved",
+      "description": "Sum of the CPU requests of every istio-proxy. Read from kube_pod_init_container_resource_requests, not the container metric: the proxy is injected as a native sidecar — an initContainer with restartPolicy Always — so it is absent from kube_pod_container_resource_requests entirely. Any capacity dashboard summing only that metric undercounts the mesh, and here the proxy's 100m is twice the application's own request.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(kube_pod_init_container_resource_requests{namespace=\"$namespace\", container=\"istio-proxy\", resource=\"cpu\"} * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Sidecar CPU used",
+      "description": "What those same proxies actually consume.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "area",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container=\"istio-proxy\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Over-reservation",
+      "description": "Reserved divided by used. Anything above about 3 is capacity nobody can spend. Lowering sidecar.istio.io/proxyCPU toward the observed figure recovers more headroom on the spot pool than migrating to ambient mode would.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 10,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(kube_pod_init_container_resource_requests{namespace=\"$namespace\", container=\"istio-proxy\", resource=\"cpu\"} * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1)) / clamp_min(sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container=\"istio-proxy\"}[5m])), 0.0001)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Sidecar memory",
+      "description": "The honest cost of sidecar mode. CPU is noise; this is per-pod and scales with replica count, so it is the figure to multiply when sizing.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 15,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "area",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", container=\"istio-proxy\"})"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Proxies",
+      "description": "One per workload pod. Under ambient mode this would be one ztunnel per node plus one waypoint per namespace needing L7 — fewer, but not zero, because the canary splits traffic on VirtualService weights.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 19,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(container_memory_working_set_bytes{namespace=\"$namespace\", container=\"istio-proxy\"})"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU — proxy against the application it fronts",
+      "description": "istio-proxy beside the workload containers in the same namespace. If the proxy line is not far below the application lines, the mesh has stopped being cheap.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 3,
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "istio-proxy"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{container}}",
+          "expr": "sum by (container) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container!=\"\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory — proxy against the application it fronts",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "istio-proxy"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{container}}",
+          "expr": "sum by (container) (container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"})"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "What that does to the nodes",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "CPU reserved, as a share of what the node can schedule",
+      "description": "Requests against allocatable. The spot pool is e2-medium — 940m schedulable — and the application tier lives there, so a 100m sidecar request is over a tenth of a node before an application container is counted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.75
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{node}}",
+          "expr": "(sum by (node) ((kube_pod_container_resource_requests{resource=\"cpu\"} or kube_pod_init_container_resource_requests{container=\"istio-proxy\", resource=\"cpu\"}) * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))) / on (node) group_left sum by (node) (kube_node_status_allocatable{resource=\"cpu\"})"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reserved against actually used, per node",
+      "description": "Solid lines are CPU requests; the same node's real consumption is the matching dashed line. Two corrections are baked into the request query and both matter: the native sidecar's request lives in the init-container metric, and kube-state-metrics keeps reporting requests for pods that have already finished — leave the phase filter off and a completed load-test Job goes on consuming half a core forever. With both applied this agrees with kubectl describe node to within a millicore.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*used.*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    6
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{node}} reserved",
+          "expr": "sum by (node) ((kube_pod_container_resource_requests{resource=\"cpu\"} or kube_pod_init_container_resource_requests{container=\"istio-proxy\", resource=\"cpu\"}) * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{node}} used",
+          "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))"
+        }
+      ]
+    }
+  ]
+}

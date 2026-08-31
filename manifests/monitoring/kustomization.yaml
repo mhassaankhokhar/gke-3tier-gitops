@@ -1,0 +1,35 @@
+# Dashboards as ConfigMaps, because Grafana's UI is not a source of truth.
+#
+# A dashboard built by clicking exists only in Grafana's database. This install
+# has persistence off, so it would not survive a pod restart — and even with
+# persistence it would be a thing nobody could review, diff or roll back. The
+# sidecar container in the Grafana pod watches for ConfigMaps carrying the label
+# below and writes them into /tmp/dashboards, so the file in Git is what is on
+# the screen.
+#
+# Verified against the live sidecar rather than the chart's defaults:
+#   LABEL=grafana_dashboard  LABEL_VALUE=1  NAMESPACE=ALL  METHOD=WATCH
+# and Grafana's own provider re-reads that folder every 30s, so a dashboard
+# appears without restarting anything.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+
+configMapGenerator:
+  - name: dashboard-mesh-traffic
+    files:
+      - mesh-traffic.json=dashboards/mesh-traffic.json
+  - name: dashboard-sidecar-cost
+    files:
+      - sidecar-cost.json=dashboards/sidecar-cost.json
+
+generatorOptions:
+  # The sidecar selects on this label; without it the ConfigMap is ignored.
+  labels:
+    grafana_dashboard: "1"
+  # Stable names. The hash suffix Kustomize adds by default exists so that a
+  # changed ConfigMap forces a rollout of whatever mounts it — which is the
+  # wrong mechanism here, since nothing mounts these and the sidecar is watching
+  # for changes anyway. With the suffix every edit would create a new object and
+  # orphan the old one.
+  disableNameSuffixHash: true
