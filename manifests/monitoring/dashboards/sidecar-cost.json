@@ -419,7 +419,7 @@
     {
       "type": "bargauge",
       "title": "CPU reserved, as a share of what the node can schedule",
-      "description": "Requests against allocatable. The spot pool is e2-medium — 940m schedulable — and the application tier lives there, so a 100m sidecar request is over a tenth of a node before an application container is counted.",
+      "description": "Requests against allocatable, right now. The spot pool is e2-medium — 940m schedulable — and the application tier lives there, so a sidecar request is a visible fraction of a node before an application container is counted.\n\nInstant, not a range query, and that is the whole point of this panel being different from the one beside it. Over a range this reduces each series with lastNotNull, and a node that was preempted an hour ago still has a last value — so the panel grew a bar for every node the window had ever seen, including one reading 12% because it was caught mid-shutdown. Six bars for three nodes. A capacity view has to answer for the cluster as it is, so it asks for one sample.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -474,8 +474,8 @@
           },
           "legendFormat": "{{node}}",
           "expr": "(sum by (node) ((kube_pod_container_resource_requests{resource=\"cpu\"} or kube_pod_init_container_resource_requests{container=\"istio-proxy\", resource=\"cpu\"}) * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))) / on (node) group_left sum by (node) (kube_node_status_allocatable{resource=\"cpu\"})",
-          "instant": false,
-          "range": true,
+          "instant": true,
+          "range": false,
           "editorMode": "code"
         }
       ],
