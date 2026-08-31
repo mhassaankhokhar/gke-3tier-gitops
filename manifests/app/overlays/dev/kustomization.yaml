@@ -53,3 +53,51 @@ patches:
     group: argoproj.io
     kind: Rollout
     name: api
+
+# Cycle the pods so they pick up the smaller sidecar request.
+#
+# The sidecar CPU request went from 100m to 30m in 11-istiod.yaml, and that
+# applies at injection: a pod already running keeps what it was created with.
+# Five mesh pods were still holding 100m while both spot nodes sat at 96%
+# reserved, so the saving only exists once they are replaced.
+#
+# restartAt rather than `kubectl rollout restart`. It is a field on the Rollout,
+# so the restart is a commit like everything else — and per Argo Rollouts' docs
+# it recreates pods in place rather than running the canary steps, honouring
+# maxUnavailable and any PodDisruptionBudget. Each replacement asks for 70m less
+# than the pod it replaces, so the pressure drops as it goes rather than at the
+# end.
+#
+# The timestamp stays here afterwards: pods newer than it are left alone, so
+# this is idempotent, and the value is a record of when the pods were last
+# cycled.
+- patch: |
+    - op: add
+      path: /spec/restartAt
+      value: "2026-08-31T12:06:04Z"
+  target:
+    group: argoproj.io
+    kind: Rollout
+    name: web
+- patch: |
+    - op: add
+      path: /spec/restartAt
+      value: "2026-08-31T12:06:04Z"
+  target:
+    group: argoproj.io
+    kind: Rollout
+    name: api
+# Redis is a Deployment, which has no restartAt — the annotation below is what
+# `kubectl rollout restart` writes, stated in the file instead of typed at a
+# prompt. One replica, so the cache is briefly unavailable; a miss falls through
+# to Postgres.
+- patch: |
+    - op: add
+      path: /spec/template/metadata/annotations
+      value:
+        kubectl.kubernetes.io/restartedAt: "2026-08-31T12:06:04Z"
+  target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: redis
