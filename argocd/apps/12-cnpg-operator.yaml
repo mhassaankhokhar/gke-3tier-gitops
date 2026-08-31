@@ -33,6 +33,29 @@ spec:
         # when a failover is most likely.
         nodeSelector:
           workload: stateful
+
+        # Two, on different nodes. The operator also serves the mutating and
+        # validating webhooks for every CloudNativePG resource, both
+        # failurePolicy: Fail — so a single replica means the node holding it
+        # decides whether a Cluster can be written at all. It is leader-elected,
+        # so the second replica is a warm standby, not a second reconciler.
+        #
+        # topologySpreadConstraints, not required podAntiAffinity: with two
+        # nodes a hard anti-affinity leaves a rolling update with nowhere to put
+        # the new pod. matchLabelKeys scopes the spread to one revision. Same
+        # arrangement as 01-cert-manager.yaml.
+        replicaCount: 2
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: DoNotSchedule
+            matchLabelKeys:
+              - pod-template-hash
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: cloudnative-pg
+                app.kubernetes.io/instance: cnpg-operator
+
         resources:
           requests:
             cpu: 50m

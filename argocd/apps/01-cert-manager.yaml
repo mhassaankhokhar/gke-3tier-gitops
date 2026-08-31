@@ -16,8 +16,50 @@ spec:
       values: |
         crds:
           enabled: true
+
+        # This pins the controller only. cert-manager's chart gives the webhook
+        # and cainjector their own blocks, and a top-level nodeSelector does not
+        # reach them — both were running unpinned and had landed on the stable
+        # pool by luck. The webhook is the one that matters: its
+        # ValidatingWebhookConfiguration is failurePolicy: Fail, so if it is
+        # unreachable every Certificate and Issuer write is rejected. On a spot
+        # node that is one preemption away.
         nodeSelector:
           workload: stateful
+
+        webhook:
+          # Two, and on different nodes. The chart's own comment says to set
+          # this to 2 or 3 in production, for exactly this reason.
+          replicaCount: 2
+          nodeSelector:
+            kubernetes.io/os: linux
+            workload: stateful
+          # topologySpreadConstraints rather than required podAntiAffinity.
+          # Both would separate the replicas; only this one survives a rolling
+          # update. With two nodes and a hard anti-affinity, the new pod has
+          # nowhere to go until an old one leaves, and the rollout stalls —
+          # which this cluster has already produced once, on the canary.
+          # matchLabelKeys: [pod-template-hash] scopes the constraint to one
+          # revision, so the old ReplicaSet's pods do not block the new one's.
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              matchLabelKeys:
+                - pod-template-hash
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: webhook
+                  app.kubernetes.io/instance: cert-manager
+                  app.kubernetes.io/component: webhook
+
+        cainjector:
+          # Not replicated: it is leader-elected and its failure delays CA
+          # injection rather than rejecting writes. Pinned, though, for the same
+          # reason as everything else here.
+          nodeSelector:
+            kubernetes.io/os: linux
+            workload: stateful
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager

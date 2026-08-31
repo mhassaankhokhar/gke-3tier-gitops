@@ -52,6 +52,26 @@ spec:
           # get certificates — so it sits with the other controllers.
           nodeSelector:
             workload: stateful
+          # Two, on different nodes. istiod serves the sidecar injector
+          # (mutating, failurePolicy: Fail) and validates every Istio resource,
+          # so on one replica the node holding it decides whether any pod in the
+          # mesh can be created. It is also the mesh's certificate authority —
+          # losing it means new pods cannot get certificates.
+          #
+          # Fixed at two rather than autoscaled: autoscaling a control plane on
+          # a two-node pool has nothing to scale into, and the HPA would only
+          # add a pod that cannot be placed.
+          replicaCount: 2
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              matchLabelKeys:
+                - pod-template-hash
+              labelSelector:
+                matchLabels:
+                  istio: pilot
+
           # One cluster, one mesh, a trial credit. Sized rather than left at the
           # chart's defaults, which assume a production cluster.
           autoscaleEnabled: false
