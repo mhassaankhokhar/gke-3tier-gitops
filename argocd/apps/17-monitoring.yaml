@@ -88,9 +88,19 @@ spec:
           admin:
             existingSecret: grafana-admin
 
+          # 512Mi, not the 256Mi this started at. Grafana was being OOMKilled
+          # (exit 137) roughly every two minutes once the two mesh dashboards
+          # were added — it sat at 242Mi against a 256Mi limit, and each restart
+          # showed in the browser as "Failed to fetch" rather than as anything
+          # naming memory. The original figure was chosen to keep a trial
+          # cluster small, before there was a real dashboard load to size
+          # against.
+          #
+          # The request goes up with it. A limit far above the request is a pod
+          # the scheduler believes is small and the kernel does not.
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits:   { memory: 256Mi }
+            requests: { cpu: 50m, memory: 256Mi }
+            limits:   { memory: 512Mi }
           persistence:
             enabled: false
           # The probes have to follow the scheme. Grafana now serves HTTPS, and
@@ -125,7 +135,13 @@ spec:
               insecureSkipVerify: true
 
           sidecar:
-            # Same reason: the dashboard sidecar posts a reload to Grafana after
+            # The two sidecars shipped with no requests and no limits at all,
+            # while using 73-75Mi each — a third of the pod's real memory,
+            # invisible to the scheduler. Sized from what they actually use.
+            resources:
+              requests: { cpu: 10m, memory: 96Mi }
+              limits:   { memory: 192Mi }
+            # The dashboard sidecar posts a reload to Grafana after
             # writing a ConfigMap, and that call was still HTTP. Grafana's file
             # provider re-reads the folder every 30s regardless, so this only
             # decides whether a new dashboard appears at once or on the next
