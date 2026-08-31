@@ -1,77 +1,18 @@
-# The overlay used while measuring per-replica capacity.
+# The dev overlay, plus a load generator's identity. Nothing else.
 #
-# This exists because of a mistake worth not repeating. To pin the tiers to one
-# replica each, auto-sync was turned off and the live HPAs were patched by hand
-# — which is exactly the thing this repository exists to prevent. The cluster
-# then held a state no file described, and restoring it meant remembering what
-# had been changed.
+# It used to build on the base and pin both tiers to one replica, because the
+# question then was "what does a single replica pair serve" — a per-replica
+# number to multiply. That number exists now, and the question has changed: what
+# does the deployment as it actually runs serve, on the nodes it actually has.
 #
-# A measurement is a configuration like any other, so it is written down. Point
-# the Application at this path, take the reading, point it back at dev.
-#
-#   kubectl -n argocd patch app app --type merge \
-#     -p '{"spec":{"source":{"path":"manifests/app/overlays/loadtest"}}}'
-#
-# Both tiers are pinned to exactly one replica, and the HPAs to min=max=1, so
-# the number that comes out is per-replica and can be multiplied. Measuring with
-# autoscaling live answers a different question — how the HPA reacts — and the
-# two were being confused.
+# So this builds on ../dev rather than ../../base. Every difference between the
+# two is exactly one thing — the k6 ServiceAccount and the policy that lets it
+# reach web — and a change to dev cannot silently fail to reach the thing being
+# measured. Pinning replicas here is what made an earlier run measure an overlay
+# nobody meant to test.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - ../../base
-  # The load generator's identity and its opening through the deny-all
-  # policy. Applied with the overlay and gone with it, rather than by hand
-  # into a live cluster.
+  - ../dev
   - k6-access.yaml
-
-images:
-  - name: web
-    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
-    newTag: 472a27fe2809049d306a4b03c66a223c679af069
-  - name: api
-    newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
-    newTag: 472a27fe2809049d306a4b03c66a223c679af069
-
-patches:
-  # One replica each. Argo CD ignores /spec/replicas on Rollouts so the HPA can
-  # own it in dev; here the HPA is pinned too, so nothing moves.
-  - target:
-      group: argoproj.io
-      kind: Rollout
-      name: web
-    patch: |
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      group: argoproj.io
-      kind: Rollout
-      name: api
-    patch: |
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      group: autoscaling
-      kind: HorizontalPodAutoscaler
-      name: web
-    patch: |
-      - op: replace
-        path: /spec/minReplicas
-        value: 1
-      - op: replace
-        path: /spec/maxReplicas
-        value: 1
-  - target:
-      group: autoscaling
-      kind: HorizontalPodAutoscaler
-      name: api
-    patch: |
-      - op: replace
-        path: /spec/minReplicas
-        value: 1
-      - op: replace
-        path: /spec/maxReplicas
-        value: 1

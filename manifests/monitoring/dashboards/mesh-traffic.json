@@ -335,8 +335,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Latency percentiles",
-      "description": "p50, p95 and p99 across the namespace. The gap between them is the shape of the tail: a p99 far above p95 is a small number of slow requests, not a slow service.",
+      "title": "Latency percentiles, per service",
+      "description": "p50, p95 and p99 broken out by destination service. Aggregated across the namespace these three lines answer \"is it slow\" but not \"which tier\" — and under load that is the only question worth asking, because web and api fail for different reasons: web is nginx serving static files, api is the one that reaches Postgres.\n\nMeasured at the destination proxy, so this is the in-mesh hop only. A k6 run reports a larger p95 for the same traffic because its number includes the gateway and the network to the client; the difference between the two is that path.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -361,36 +361,36 @@
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "p50",
+          "legendFormat": "{{destination_canonical_service}} p50",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, destination_canonical_service) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
           "instant": false,
           "range": true,
           "editorMode": "code"
         },
         {
           "refId": "B",
-          "legendFormat": "p95",
+          "legendFormat": "{{destination_canonical_service}} p95",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, destination_canonical_service) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
           "instant": false,
           "range": true,
           "editorMode": "code"
         },
         {
           "refId": "C",
-          "legendFormat": "p99",
+          "legendFormat": "{{destination_canonical_service}} p99",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, destination_canonical_service) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
           "instant": false,
           "range": true,
           "editorMode": "code"
