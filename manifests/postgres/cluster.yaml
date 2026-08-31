@@ -37,6 +37,21 @@ spec:
   affinity:
     nodeSelector:
       workload: stateful
+    # required, not the default preferred — and this is the correction to the
+    # comment at the top of this file. It reasoned that a third instance would
+    # land beside an existing one under `preferred`, and stopped there. Two do
+    # the same thing: both instances were on stateful-7t7z, a two-instance HA
+    # Postgres with both copies in one failure domain, which is not HA at all.
+    #
+    # topologyKey is the default kubernetes.io/hostname. The cluster is zonal,
+    # so spreading by zone would place nothing.
+    #
+    # The cost is stated plainly in CloudNativePG's docs: with `required` and
+    # fewer nodes than instances, a pod stays Pending. That is the right
+    # failure. Two stateful nodes, two instances — and a replica that can only
+    # exist beside its primary is not adding a copy, it is adding a pod.
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
 
   # Sized for a trial credit, and stated rather than defaulted.
   resources:

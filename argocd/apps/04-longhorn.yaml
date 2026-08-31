@@ -73,6 +73,24 @@ spec:
           # Two stateful nodes, so two replicas is the most that can be placed.
           defaultReplicaCount: 2
 
+          # Tell Longhorn the cluster has an autoscaler, because it does — the
+          # spot pool is 1-3 nodes and GKE moves it.
+          #
+          # Without this Longhorn writes one instance-manager PodDisruptionBudget
+          # per node with minAvailable 1 against a single pod, so every node in
+          # the cluster reports zero allowed disruptions and cannot be drained or
+          # scaled down. Five of them existed here while Longhorn held no volumes
+          # at all; GKE's own recommender flagged it as an unpermissive PDB.
+          #
+          # With it, Longhorn keeps only the PDBs it needs: one per volume, on
+          # the node holding a protected replica, and none anywhere else.
+          #
+          # The documented cost is that a node carrying a reusable replica can be
+          # removed and the replica rebuilt. nodeDrainPolicy stays at
+          # block-if-contains-last-replica, so the last healthy replica still
+          # blocks a drain — this trades a redundant copy, never the only one.
+          kubernetesClusterAutoscalerEnabled: true
+
           # Replica data goes only where the node pool says it may.
           #
           # Longhorn otherwise gives every new node a default disk, which makes
