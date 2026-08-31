@@ -42,7 +42,10 @@
         "w": 24,
         "x": 0,
         "y": 0
-      }
+      },
+      "id": 1,
+      "collapsed": false,
+      "panels": []
     },
     {
       "type": "stat",
@@ -81,9 +84,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(kube_pod_init_container_resource_requests{namespace=\"$namespace\", container=\"istio-proxy\", resource=\"cpu\"} * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))"
+          "expr": "sum(kube_pod_init_container_resource_requests{namespace=\"$namespace\", container=\"istio-proxy\", resource=\"cpu\"} * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 2
     },
     {
       "type": "stat",
@@ -122,9 +130,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container=\"istio-proxy\"}[5m]))"
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container=\"istio-proxy\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 3
     },
     {
       "type": "stat",
@@ -181,9 +194,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(kube_pod_init_container_resource_requests{namespace=\"$namespace\", container=\"istio-proxy\", resource=\"cpu\"} * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1)) / clamp_min(sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container=\"istio-proxy\"}[5m])), 0.0001)"
+          "expr": "sum(kube_pod_init_container_resource_requests{namespace=\"$namespace\", container=\"istio-proxy\", resource=\"cpu\"} * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1)) / clamp_min(sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container=\"istio-proxy\"}[5m])), 0.0001)",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 4
     },
     {
       "type": "stat",
@@ -222,9 +240,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", container=\"istio-proxy\"})"
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", container=\"istio-proxy\"})",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 5
     },
     {
       "type": "stat",
@@ -263,9 +286,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count(container_memory_working_set_bytes{namespace=\"$namespace\", container=\"istio-proxy\"})"
+          "expr": "count(container_memory_working_set_bytes{namespace=\"$namespace\", container=\"istio-proxy\"})",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 6
     },
     {
       "type": "timeseries",
@@ -314,9 +342,13 @@
             "uid": "prometheus"
           },
           "legendFormat": "{{container}}",
-          "expr": "sum by (container) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container!=\"\"}[5m]))"
+          "expr": "sum by (container) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container!=\"\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 7
     },
     {
       "type": "timeseries",
@@ -363,9 +395,13 @@
             "uid": "prometheus"
           },
           "legendFormat": "{{container}}",
-          "expr": "sum by (container) (container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"})"
+          "expr": "sum by (container) (container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"})",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 8
     },
     {
       "type": "row",
@@ -375,7 +411,10 @@
         "w": 24,
         "x": 0,
         "y": 14
-      }
+      },
+      "id": 9,
+      "collapsed": false,
+      "panels": []
     },
     {
       "type": "bargauge",
@@ -434,9 +473,13 @@
             "uid": "prometheus"
           },
           "legendFormat": "{{node}}",
-          "expr": "(sum by (node) ((kube_pod_container_resource_requests{resource=\"cpu\"} or kube_pod_init_container_resource_requests{container=\"istio-proxy\", resource=\"cpu\"}) * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))) / on (node) group_left sum by (node) (kube_node_status_allocatable{resource=\"cpu\"})"
+          "expr": "(sum by (node) ((kube_pod_container_resource_requests{resource=\"cpu\"} or kube_pod_init_container_resource_requests{container=\"istio-proxy\", resource=\"cpu\"}) * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))) / on (node) group_left sum by (node) (kube_node_status_allocatable{resource=\"cpu\"})",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -491,7 +534,10 @@
             "uid": "prometheus"
           },
           "legendFormat": "{{node}} reserved",
-          "expr": "sum by (node) ((kube_pod_container_resource_requests{resource=\"cpu\"} or kube_pod_init_container_resource_requests{container=\"istio-proxy\", resource=\"cpu\"}) * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))"
+          "expr": "sum by (node) ((kube_pod_container_resource_requests{resource=\"cpu\"} or kube_pod_init_container_resource_requests{container=\"istio-proxy\", resource=\"cpu\"}) * on (namespace, pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         },
         {
           "refId": "B",
@@ -500,9 +546,13 @@
             "uid": "prometheus"
           },
           "legendFormat": "{{node}} used",
-          "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))"
+          "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 11
     }
   ]
 }

@@ -1,20 +1,32 @@
 {
   "title": "Mesh — Subscription Tracker",
   "uid": "mesh-traffic",
-  "tags": ["istio", "app"],
+  "tags": [
+    "istio",
+    "app"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "namespace",
         "label": "Namespace",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "query": "label_values(istio_requests_total, destination_workload_namespace)",
-        "current": { "text": "app", "value": "app" },
+        "current": {
+          "text": "app",
+          "value": "app"
+        },
         "refresh": 2,
         "includeAll": false
       }
@@ -24,184 +36,468 @@
     {
       "type": "row",
       "title": "Service level",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "collapsed": false,
+      "panels": []
     },
     {
       "type": "stat",
       "title": "Requests / sec",
       "description": "Counted at the destination proxy, so this is what the callee actually served rather than what the caller believes it sent.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "decimals": 1, "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] } },
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area", "colorMode": "none" },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "area",
+        "colorMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 2
     },
     {
       "type": "stat",
       "title": "Success rate",
       "description": "Share of responses that are not 5xx. A 4xx is the client being wrong and is not counted against the service.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "fieldConfig": {
-        "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "max": 1,
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "red", "value": null },
-            { "color": "orange", "value": 0.99 },
-            { "color": "green", "value": 0.995 } ] } },
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.99
+              },
+              {
+                "color": "green",
+                "value": 0.995
+              }
+            ]
+          }
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area", "colorMode": "value" },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "area",
+        "colorMode": "value"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\", response_code!~\"5..\"}[5m])) / sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\", response_code!~\"5..\"}[5m])) / sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 3
     },
     {
       "type": "stat",
       "title": "mTLS coverage",
       "description": "Share of requests whose connection_security_policy is mutual_tls. PeerAuthentication is STRICT here, so anything below 100% means traffic is reaching a workload without passing through its proxy — a pod whose redirection was never applied, not a policy that is merely off.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
       "fieldConfig": {
-        "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "max": 1,
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "red", "value": null },
-            { "color": "green", "value": 1 } ] } },
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "none", "colorMode": "value" },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\", connection_security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])), 0.0001)"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\", connection_security_policy=\"mutual_tls\"}[5m])) / clamp_min(sum(rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])), 0.0001)",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 4
     },
     {
       "type": "stat",
       "title": "p95 latency",
       "description": "95 of every 100 requests finish faster than this. The measured baseline on one web + one api replica was 50ms.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
       "fieldConfig": {
-        "defaults": { "unit": "ms", "decimals": 0,
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "green", "value": null },
-            { "color": "orange", "value": 200 },
-            { "color": "red", "value": 1000 } ] } },
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 200
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area", "colorMode": "value" },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "area",
+        "colorMode": "value"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code",
+          "legendFormat": "__auto"
         }
-      ]
+      ],
+      "id": 5
     },
     {
       "type": "timeseries",
       "title": "Request rate by service",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } },
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "legendFormat": "{{destination_canonical_service}}",
-          "expr": "sum by (destination_canonical_service) (rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))"
+          "expr": "sum by (destination_canonical_service) (rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 6
     },
     {
       "type": "timeseries",
       "title": "Latency percentiles",
       "description": "p50, p95 and p99 across the namespace. The gap between them is the shape of the tail: a p99 far above p95 is a small number of slow requests, not a slow service.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
       "fieldConfig": {
-        "defaults": { "unit": "ms", "custom": { "fillOpacity": 0, "lineWidth": 2, "showPoints": "never" } },
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
         "overrides": []
       },
       "targets": [
         {
-          "refId": "A", "legendFormat": "p50",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))"
+          "refId": "A",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         },
         {
-          "refId": "B", "legendFormat": "p95",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))"
+          "refId": "B",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         },
         {
-          "refId": "C", "legendFormat": "p99",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))"
+          "refId": "C",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m])))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 7
     },
     {
       "type": "row",
       "title": "Where the traffic goes",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 8,
+      "collapsed": false,
+      "panels": []
     },
     {
       "type": "timeseries",
       "title": "Edges (source → destination)",
       "description": "One series per call path. The mesh's authorization policies are written against exactly these pairs, so an edge appearing here that is not in mesh.yaml is a policy gap.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never", "stacking": { "mode": "normal" } } },
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "legendFormat": "{{source_canonical_service}} → {{destination_canonical_service}}",
-          "expr": "sum by (source_canonical_service, destination_canonical_service) (rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))"
+          "expr": "sum by (source_canonical_service, destination_canonical_service) (rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 9
     },
     {
       "type": "timeseries",
       "title": "Response codes",
       "description": "403 here is the mesh denying a call, not the application refusing one — the deny-all policy fails closed, so a new call path shows up as 403 before it shows up as a bug.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 20, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } } },
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "legendFormat": "{{response_code}}",
-          "expr": "sum by (response_code) (rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))"
+          "expr": "sum by (response_code) (rate(istio_requests_total{reporter=\"destination\", destination_workload_namespace=\"$namespace\"}[5m]))",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "id": 10
     }
   ]
 }
