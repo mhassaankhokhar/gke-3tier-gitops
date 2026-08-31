@@ -23,10 +23,13 @@ spec:
   source:
     repoURL: git@github.com:mhassaankhokhar/gke-3tier-gitops.git
     targetRevision: main
+    # overlays/dev is the normal one, and the file CI writes image tags into.
     # overlays/loadtest pins both tiers to one replica for a per-replica
-    # measurement. Switch here, in a commit — patching the live Application
-    # does not work: root manages this file and selfHeal reverts it.
-    path: manifests/app/overlays/loadtest
+    # measurement — switch here, in a commit. Patching the live Application does
+    # not work: root manages this file and selfHeal reverts it within a minute,
+    # which once left a measurement running against the overlay it was not
+    # supposed to be running against.
+    path: manifests/app/overlays/dev
   destination:
     server: https://kubernetes.default.svc
     namespace: app
