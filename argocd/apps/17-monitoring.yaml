@@ -97,6 +97,27 @@ spec:
             timeoutSeconds: 30
             failureThreshold: 10
 
+          # Everything that talks to Grafana has to speak HTTPS now, not just
+          # the probes. Prometheus was still scraping http://<pod>:3000/metrics
+          # every 30s and getting "client sent an HTTP request to an HTTPS
+          # server" — so Grafana's own metrics were simply missing, with nothing
+          # failing to say so. insecureSkipVerify because the scrape goes to a
+          # pod IP and the certificate is issued for the public hostname.
+          serviceMonitor:
+            scheme: https
+            tlsConfig:
+              insecureSkipVerify: true
+
+          sidecar:
+            # Same reason: the dashboard sidecar posts a reload to Grafana after
+            # writing a ConfigMap, and that call was still HTTP. Grafana's file
+            # provider re-reads the folder every 30s regardless, so this only
+            # decides whether a new dashboard appears at once or on the next
+            # sweep — but a call that always fails is not a thing to leave in.
+            skipTlsVerify: true
+            dashboards:
+              reloadURL: "https://localhost:3000/api/admin/provisioning/dashboards/reload"
+
           # The certificate cert-manager issues in manifests/platform. Grafana
           # reads it from the mounted path below.
           extraSecretMounts:
