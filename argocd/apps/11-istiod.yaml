@@ -122,6 +122,35 @@ spec:
           # which reads like the callee is down rather than like a startup race.
           defaultConfig:
             holdApplicationUntilProxyStarts: true
+            # Emit the cluster statistics the default set leaves out.
+            #
+            # Istio ships a deliberately minimal stat set — cluster_manager,
+            # listener_manager, server, and cluster.xds-grpc — to keep the
+            # proxy's memory down. Verified by asking Prometheus for
+            # envoy_cluster_upstream_rq_pending_active during a load test and
+            # getting xds-grpc and nothing else: the proxy's link to istiod, not
+            # a single application cluster.
+            #
+            # That is what made a run unexplainable. p95 was 2.2s with nothing
+            # CPU-saturated, so the request was waiting rather than working — and
+            # the queue it was waiting in is exactly what these stats count.
+            #
+            # Scoped rather than opened wide: connections, pending queues,
+            # retries, timeouts and outlier ejections. `.*` here would emit tens
+            # of thousands of series per proxy.
+            proxyStatsMatcher:
+              inclusionRegexps:
+                - ".*upstream_cx_.*"
+                - ".*upstream_rq_pending.*"
+                - ".*upstream_rq_active.*"
+                - ".*upstream_rq_retry.*"
+                - ".*outlier_detection.*"
+                - ".*circuit_breakers.*"
+              inclusionSuffixes:
+                - "upstream_rq_timeout"
+            #
+            # Istio's docs are explicit that the proxy must restart to pick this
+            # up — an existing pod keeps the stat set it started with.
           # Access logs to stdout. A mesh whose traffic you cannot see is
           # harder to reason about than no mesh at all.
           accessLogFile: /dev/stdout

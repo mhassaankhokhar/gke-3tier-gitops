@@ -7,6 +7,14 @@
 # That is the price of keeping the database out of the mesh, and it is stated
 # rather than left as a gap.
 #
+# It is not currently enforced, and that is worth stating plainly rather than
+# discovering later. This cluster has addonsConfig.networkPolicyConfig.disabled
+# true, no datapathProvider set, and no Calico or Cilium pods in kube-system —
+# checked against the live cluster. With no policy controller, a NetworkPolicy
+# object is accepted by the API server and does nothing. So the rules below
+# describe the intent and will take effect when enforcement is enabled; today
+# Postgres is reachable from any pod in the cluster.
+#
 # It lives with Postgres rather than with the app manifests for a concrete
 # reason: the app base applies `namespace: app` to everything it holds, and this
 # was silently rewritten into `app` when it was there — selecting nothing,
@@ -43,3 +51,14 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: cnpg-system
+    # Prometheus, for the metrics port only — never 5432. Added with the
+    # PodMonitor beside this file: an ingress rule listing three sources and not
+    # the scraper would have let the PodMonitor be created, look correct, and
+    # collect nothing the moment enforcement is switched on.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9187
