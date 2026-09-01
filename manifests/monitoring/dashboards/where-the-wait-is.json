@@ -1,0 +1,149 @@
+{
+  "title": "Where the Wait Is",
+  "uid": "where-the-wait-is",
+  "tags": ["istio", "postgres", "loadtest"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "description": "Built after a load test reported p95 2.2s with nothing CPU-saturated. When CPU is idle and latency is high, the request is waiting rather than working, and there are only a few places it can wait: for a connection, in a proxy's queue, or on another query inside Postgres. Each has a panel here.",
+  "panels": [
+    {
+      "id": 1, "type": "row", "collapsed": false, "panels": [],
+      "title": "Is the connection pool the ceiling?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2, "type": "timeseries",
+      "title": "Connections to Postgres, per api pod",
+      "description": "api/db.js sets max: 10 per process, so each api pod can hold at most ten. A line that rises to 10 and then stays flat while latency climbs is the pool being the ceiling — the eleventh request waits in the application, where no proxy and no database can see it.\n\nCounted at the api pod's own proxy, on the outbound cluster to postgres-rw.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 10 } ] } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "instant": false, "range": true, "editorMode": "code",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "legendFormat": "{{pod}}",
+          "expr": "sum by (pod) (envoy_cluster_upstream_cx_active{namespace=\"app\", cluster_name=~\"outbound\\\\|5432\\\\|\\\\|postgres-rw.*\"})" }
+      ]
+    },
+    {
+      "id": 3, "type": "timeseries",
+      "title": "Backends Postgres sees, by user",
+      "description": "The same connections counted from the other end, from pg_stat_activity. max_connections is 100 and six api pods at ten each is sixty, so this should stay well under the server limit — if it does while the panel beside it is flat at ten, the limit being hit is ours, not Postgres's.\n\nidle means a connection held open by the pool with no query running; active means a query is executing.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "custom": { "fillOpacity": 20, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "instant": false, "range": true, "editorMode": "code",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "legendFormat": "{{usename}} {{state}}",
+          "expr": "sum by (usename, state) (cnpg_backends_total{datname=\"app\"})" }
+      ]
+    },
+    {
+      "id": 4, "type": "row", "collapsed": false, "panels": [],
+      "title": "Is the queue in a proxy?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "id": 5, "type": "timeseries",
+      "title": "Requests queued at the proxy, per upstream",
+      "description": "Requests Envoy has accepted but not yet sent, because every connection to that upstream is busy. This is the queue that exists between two services — if it is flat at zero while latency is high, the waiting is not happening here and the search moves inside the application.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "instant": false, "range": true, "editorMode": "code",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "legendFormat": "{{cluster_name}}",
+          "expr": "sum by (cluster_name) (envoy_cluster_upstream_rq_pending_active{namespace=\"app\", cluster_name=~\"outbound.*\"})" }
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries",
+      "title": "Requests rejected by our own circuit breaker",
+      "description": "destinationrules.yaml sets http1MaxPendingRequests: 50. Past fifty queued, Envoy stops queueing and returns 503 — which is a limit we chose, not one the system found. Anything above zero here means the ceiling under load is a line in our own configuration.\n\nA rate, not a total: the raw counter only ever climbs.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "decimals": 2, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.01 } ] } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "instant": false, "range": true, "editorMode": "code",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "legendFormat": "{{pod}} → {{cluster_name}}",
+          "expr": "sum by (pod, cluster_name) (rate(envoy_cluster_upstream_rq_pending_overflow{namespace=\"app\", cluster_name=~\"outbound.*\"}[1m])) > 0" }
+      ]
+    },
+    {
+      "id": 7, "type": "row", "collapsed": false, "panels": [],
+      "title": "Is Postgres itself stuck?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }
+    },
+    {
+      "id": 8, "type": "timeseries",
+      "title": "Backends waiting on another query",
+      "description": "Backends blocked on a lock another transaction holds. This is waiting that costs no CPU at all, which is why the first load test could look idle and slow at the same time. Zero here rules Postgres-internal contention out.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "instant": false, "range": true, "editorMode": "code",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "legendFormat": "{{pod}}",
+          "expr": "sum by (pod) (cnpg_backends_waiting_total)" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries",
+      "title": "Longest running transaction",
+      "description": "The age of the oldest open transaction. A pool that never returns a connection shows up here as a transaction that keeps growing — the application holding the connection rather than the database being slow.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "decimals": 1, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "instant": false, "range": true, "editorMode": "code",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "legendFormat": "{{pod}} {{state}}",
+          "expr": "max by (pod, state) (cnpg_backends_max_tx_duration_seconds)" }
+      ]
+    },
+    {
+      "id": 10, "type": "timeseries",
+      "title": "Postgres shared buffer hit ratio",
+      "description": "Share of block reads served from shared_buffers rather than the filesystem. shared_buffers is 128MB here. A ratio falling under load means the working set no longer fits and reads are going to disk — a different cause of latency from either queue above, and one that does show as I/O wait rather than CPU.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "max": 1, "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "instant": false, "range": true, "editorMode": "code",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "legendFormat": "{{pod}}",
+          "expr": "sum by (pod) (rate(cnpg_cache_hits[2m])) / clamp_min(sum by (pod) (rate(cnpg_cache_hits[2m])) + sum by (pod) (rate(cnpg_cache_miss[2m])), 0.0001)" }
+      ]
+    }
+  ]
+}
