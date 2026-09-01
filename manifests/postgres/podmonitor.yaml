@@ -35,3 +35,7 @@ spec:
       cnpg.io/cluster: postgres
   podMetricsEndpoints:
     - port: metrics
+      # Matches the envoy scrape interval for the same reason: connection counts
+      # and backend states have to be readable per load-test stage, and at the
+      # global 30s the shortest stable rate window is wider than a stage.
+      interval: 10s

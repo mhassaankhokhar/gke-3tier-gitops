@@ -198,6 +198,20 @@ spec:
             additionalScrapeConfigs:
               - job_name: 'istio-envoy-stats'
                 metrics_path: /stats/prometheus
+                # 10s, not the global 30s.
+                #
+                # A rate() needs several samples inside its window to be stable,
+                # so at a 30s scrape the shortest usable window was 2 minutes —
+                # which is longer than a load-test stage, and every per-stage
+                # number came out averaged across three different load levels.
+                # rate(...[30s]) returned nothing at all, because one sample
+                # cannot make a rate. At 10s a 40s window holds four samples and
+                # fits inside a stage.
+                #
+                # The cost is three times the samples from these targets. It is
+                # paid on the one job whose resolution decides whether a load
+                # test can be read, not globally.
+                scrape_interval: 10s
                 kubernetes_sd_configs:
                   - role: pod
                 relabel_configs:
