@@ -33,10 +33,21 @@ spec:
         # a connect timeout that tight turns ordinary jitter into failures.
         connectTimeout: 250ms
       http:
-        # The line that matters. With no ceiling, requests queue without limit,
-        # which is exactly how a 52-second response happens. Past 50 waiting,
-        # Envoy returns 503 immediately.
-        http1MaxPendingRequests: 50
+        # The line that matters, and the one a load test proved was binding.
+        # With no ceiling requests queue without limit, which is how a
+        # 52-second response happens; past this many waiting, Envoy returns 503
+        # immediately.
+        #
+        # 50 was too low to measure anything with. At 116 req/s three of six web
+        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
+        # 12.24% failure rate that was this number, not the system's capacity.
+        # It also fed the outlier detection below: those 503s are 5xx, so
+        # endpoints were being ejected for a limit we chose.
+        #
+        # 256, so the queue stops being the answer and whatever is actually
+        # slower shows up instead. Still bounded — an unbounded queue trades a
+        # fast failure for a slow one.
+        http1MaxPendingRequests: 256
         # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
         # N requests, which spreads load more evenly but throws away HTTP/1.1
         # keep-alive and pays a handshake far too often at this request rate.
@@ -66,10 +77,21 @@ spec:
         # a connect timeout that tight turns ordinary jitter into failures.
         connectTimeout: 250ms
       http:
-        # The line that matters. With no ceiling, requests queue without limit,
-        # which is exactly how a 52-second response happens. Past 50 waiting,
-        # Envoy returns 503 immediately.
-        http1MaxPendingRequests: 50
+        # The line that matters, and the one a load test proved was binding.
+        # With no ceiling requests queue without limit, which is how a
+        # 52-second response happens; past this many waiting, Envoy returns 503
+        # immediately.
+        #
+        # 50 was too low to measure anything with. At 116 req/s three of six web
+        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
+        # 12.24% failure rate that was this number, not the system's capacity.
+        # It also fed the outlier detection below: those 503s are 5xx, so
+        # endpoints were being ejected for a limit we chose.
+        #
+        # 256, so the queue stops being the answer and whatever is actually
+        # slower shows up instead. Still bounded — an unbounded queue trades a
+        # fast failure for a slow one.
+        http1MaxPendingRequests: 256
         # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
         # N requests, which spreads load more evenly but throws away HTTP/1.1
         # keep-alive and pays a handshake far too often at this request rate.
@@ -99,10 +121,21 @@ spec:
         # a connect timeout that tight turns ordinary jitter into failures.
         connectTimeout: 250ms
       http:
-        # The line that matters. With no ceiling, requests queue without limit,
-        # which is exactly how a 52-second response happens. Past 50 waiting,
-        # Envoy returns 503 immediately.
-        http1MaxPendingRequests: 50
+        # The line that matters, and the one a load test proved was binding.
+        # With no ceiling requests queue without limit, which is how a
+        # 52-second response happens; past this many waiting, Envoy returns 503
+        # immediately.
+        #
+        # 50 was too low to measure anything with. At 116 req/s three of six web
+        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
+        # 12.24% failure rate that was this number, not the system's capacity.
+        # It also fed the outlier detection below: those 503s are 5xx, so
+        # endpoints were being ejected for a limit we chose.
+        #
+        # 256, so the queue stops being the answer and whatever is actually
+        # slower shows up instead. Still bounded — an unbounded queue trades a
+        # fast failure for a slow one.
+        http1MaxPendingRequests: 256
         # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
         # N requests, which spreads load more evenly but throws away HTTP/1.1
         # keep-alive and pays a handshake far too often at this request rate.
@@ -132,10 +165,21 @@ spec:
         # a connect timeout that tight turns ordinary jitter into failures.
         connectTimeout: 250ms
       http:
-        # The line that matters. With no ceiling, requests queue without limit,
-        # which is exactly how a 52-second response happens. Past 50 waiting,
-        # Envoy returns 503 immediately.
-        http1MaxPendingRequests: 50
+        # The line that matters, and the one a load test proved was binding.
+        # With no ceiling requests queue without limit, which is how a
+        # 52-second response happens; past this many waiting, Envoy returns 503
+        # immediately.
+        #
+        # 50 was too low to measure anything with. At 116 req/s three of six web
+        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
+        # 12.24% failure rate that was this number, not the system's capacity.
+        # It also fed the outlier detection below: those 503s are 5xx, so
+        # endpoints were being ejected for a limit we chose.
+        #
+        # 256, so the queue stops being the answer and whatever is actually
+        # slower shows up instead. Still bounded — an unbounded queue trades a
+        # fast failure for a slow one.
+        http1MaxPendingRequests: 256
         # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
         # N requests, which spreads load more evenly but throws away HTTP/1.1
         # keep-alive and pays a handshake far too often at this request rate.
@@ -165,10 +209,21 @@ spec:
         # a connect timeout that tight turns ordinary jitter into failures.
         connectTimeout: 250ms
       http:
-        # The line that matters. With no ceiling, requests queue without limit,
-        # which is exactly how a 52-second response happens. Past 50 waiting,
-        # Envoy returns 503 immediately.
-        http1MaxPendingRequests: 50
+        # The line that matters, and the one a load test proved was binding.
+        # With no ceiling requests queue without limit, which is how a
+        # 52-second response happens; past this many waiting, Envoy returns 503
+        # immediately.
+        #
+        # 50 was too low to measure anything with. At 116 req/s three of six web
+        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
+        # 12.24% failure rate that was this number, not the system's capacity.
+        # It also fed the outlier detection below: those 503s are 5xx, so
+        # endpoints were being ejected for a limit we chose.
+        #
+        # 256, so the queue stops being the answer and whatever is actually
+        # slower shows up instead. Still bounded — an unbounded queue trades a
+        # fast failure for a slow one.
+        http1MaxPendingRequests: 256
         # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
         # N requests, which spreads load more evenly but throws away HTTP/1.1
         # keep-alive and pays a handshake far too often at this request rate.

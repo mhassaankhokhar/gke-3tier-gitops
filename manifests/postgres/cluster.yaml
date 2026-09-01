@@ -53,13 +53,35 @@ spec:
     enablePodAntiAffinity: true
     podAntiAffinityType: required
 
+  postgresql:
+    parameters:
+      # 200, because the application's pool is about to ask for more than the
+      # default 100 can serve.
+      #
+      # The arithmetic that decides this number is the api HPA's ceiling, not a
+      # guess: six api pods at a pool of 25 is 150 connections, plus streaming
+      # replication and the metrics exporter. At max_connections 100 the pods
+      # would simply fail to connect once past the fourth, and the error would
+      # read as the database being down.
+      #
+      # Raised together with the pool and never after it — a pool allowed to
+      # open connections the server will refuse fails at peak load, which is the
+      # one moment it matters.
+      max_connections: "200"
+
   # Sized for a trial credit, and stated rather than defaulted.
+  #
+  # 1Gi, up from 512Mi, because connections cost memory: each backend is a
+  # process. Measured at 198Mi peak on the primary with roughly 60 connections
+  # open, against the 512Mi limit — going to 150 leaves too little margin, and a
+  # Postgres OOMKilled mid-load-test would look like the application failing.
+  # Stable nodes are at 30-40% memory requested, so the room exists.
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
-      memory: 512Mi
+      memory: 1Gi
 
   bootstrap:
     initdb:
