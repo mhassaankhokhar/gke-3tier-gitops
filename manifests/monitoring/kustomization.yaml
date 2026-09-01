@@ -22,6 +22,9 @@ configMapGenerator:
   - name: dashboard-sidecar-cost
     files:
       - sidecar-cost.json=dashboards/sidecar-cost.json
+  - name: dashboard-where-the-wait-is
+    files:
+      - where-the-wait-is.json=dashboards/where-the-wait-is.json
 
 generatorOptions:
   # The sidecar selects on this label; without it the ConfigMap is ignored.
