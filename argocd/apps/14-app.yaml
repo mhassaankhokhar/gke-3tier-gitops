@@ -29,7 +29,7 @@ spec:
     # not work: root manages this file and selfHeal reverts it within a minute,
     # which once left a measurement running against the overlay it was not
     # supposed to be running against.
-    path: manifests/app/overlays/dev
+    path: manifests/app/overlays/loadtest
   destination:
     server: https://kubernetes.default.svc
     namespace: app
