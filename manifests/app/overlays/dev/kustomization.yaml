@@ -17,10 +17,10 @@ resources:
 images:
 - name: api
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/api
-  newTag: 472a27fe2809049d306a4b03c66a223c679af069
+  newTag: 8b3de9e18a43954d577ecc76a7868cc572369f39
 - name: web
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
-  newTag: 472a27fe2809049d306a4b03c66a223c679af069
+  newTag: 8b3de9e18a43954d577ecc76a7868cc572369f39
 
   # dynamicStableScale is a dev concession, not a default worth inheriting —
   # which is why it is patched here rather than set in the base.
@@ -36,23 +36,6 @@ images:
   # full capacity takes as long as starting pods. The default spends spare
   # capacity to buy an instant rollback, and in production that trade is worth
   # making. Here there is no spare capacity to spend.
-patches:
-- patch: |
-    - op: add
-      path: /spec/strategy/canary/dynamicStableScale
-      value: true
-  target:
-    group: argoproj.io
-    kind: Rollout
-    name: web
-- patch: |
-    - op: add
-      path: /spec/strategy/canary/dynamicStableScale
-      value: true
-  target:
-    group: argoproj.io
-    kind: Rollout
-    name: api
 
 # Cycle the pods to pick up mesh configuration that only applies at start.
 #
@@ -72,6 +55,27 @@ patches:
 # The timestamp stays here afterwards: pods newer than it are left alone, so
 # this is idempotent, and the value is a record of when the pods were last
 # cycled.
+# Redis is a Deployment, which has no restartAt — the annotation below is what
+# `kubectl rollout restart` writes, stated in the file instead of typed at a
+# prompt. One replica, so the cache is briefly unavailable; a miss falls through
+# to Postgres.
+patches:
+- patch: |
+    - op: add
+      path: /spec/strategy/canary/dynamicStableScale
+      value: true
+  target:
+    group: argoproj.io
+    kind: Rollout
+    name: web
+- patch: |
+    - op: add
+      path: /spec/strategy/canary/dynamicStableScale
+      value: true
+  target:
+    group: argoproj.io
+    kind: Rollout
+    name: api
 - patch: |
     - op: add
       path: /spec/restartAt
@@ -88,10 +92,6 @@ patches:
     group: argoproj.io
     kind: Rollout
     name: api
-# Redis is a Deployment, which has no restartAt — the annotation below is what
-# `kubectl rollout restart` writes, stated in the file instead of typed at a
-# prompt. One replica, so the cache is briefly unavailable; a miss falls through
-# to Postgres.
 - patch: |
     - op: add
       path: /spec/template/metadata/annotations
@@ -99,6 +99,6 @@ patches:
         kubectl.kubernetes.io/restartedAt: "2026-09-01T06:43:53Z"
   target:
     group: apps
-    version: v1
     kind: Deployment
     name: redis
+    version: v1
