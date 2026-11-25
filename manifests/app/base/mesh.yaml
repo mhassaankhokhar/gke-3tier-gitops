@@ -1,10 +1,4 @@
-# What the mesh is actually for here: encryption nobody had to write, and
-# authorization written against identity rather than addresses.
-#
-# STRICT, not PERMISSIVE. Permissive accepts plaintext alongside mTLS, which is
-# the right setting while migrating an existing system into a mesh and the wrong
-# one for a namespace that was born inside it — it means "mTLS is on" and "mTLS
-# is enforced" stop being the same statement.
+# STRICT mTLS for the namespace: PERMISSIVE would accept plaintext too.
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
@@ -14,9 +8,7 @@ spec:
   mtls:
     mode: STRICT
 ---
-# Deny by default. Istio has no implicit deny until an ALLOW policy exists for a
-# workload, so an empty-rule DENY makes the namespace closed and every opening
-# below deliberate.
+# Deny by default: an empty DENY closes the namespace, so every ALLOW below is deliberate.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -25,12 +17,8 @@ metadata:
 spec:
   {}
 ---
-# api accepts calls from web and nothing else.
-#
-# The principal is a service account, not a namespace or an IP: Envoy verifies
-# it from the mTLS certificate, so it cannot be spoofed by a pod that merely
-# sits in the right namespace. A namespace-scoped rule would let anything in
-# `app` — including a debug pod — reach the tier that reaches the database.
+# api accepts calls only from web's service account (verified via mTLS), not
+# from the whole namespace.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -47,19 +35,11 @@ spec:
             principals: ["cluster.local/ns/app/sa/web"]
       to:
         - operation:
-            # All five verbs now: this is a CRUD API, not a status endpoint.
-            # Left at GET, every create and update would be denied — and the
-            # failure would look like the UI being broken rather than like a
-            # policy.
+            # All CRUD verbs.
             methods: ["GET", "POST", "PATCH", "DELETE"]
             paths: ["/api/*"]
 ---
-# redis accepts calls from api, and nothing else.
-#
-# It used to be web's, as a session store. The tier that talks to it changed
-# when the app did, and the rule had to change with it — a policy naming the
-# wrong principal fails closed, so this would have surfaced as a cache that
-# never worked rather than as a hole.
+# redis accepts calls only from api.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -76,16 +56,8 @@ spec:
             principals: ["cluster.local/ns/app/sa/api"]
 ---
 ---
-# web accepts calls from the ingress gateway, and only from it.
-#
-# Without this the site returns 403 from the deny-all above, with Envoy logging
-# `rbac_access_denied_matched_policy[none]` — no ALLOW matched, so the default
-# denied it. That is the policy working, not failing: opening the front door is
-# as deliberate as opening any other.
-#
-# Note it is still a principal, not "anything from istio-system": only the
-# gateway's own identity may reach web, so another workload in that namespace
-# cannot bypass the gateway and call the app directly.
+# web accepts calls only from the ingress gateway's identity, not all of istio-system.
+# Without it: 403 rbac_access_denied_matched_policy[none].
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:

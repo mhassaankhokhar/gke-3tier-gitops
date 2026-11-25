@@ -1,25 +1,8 @@
-# Scrape CloudNativePG's metrics.
-#
-# Without this the database is invisible. A load test measured p95 at 2.2s with
-# nothing CPU-saturated, and the two obvious places for a request to be waiting —
-# database connections and the proxy's queue — had no metrics at all, so neither
-# could be confirmed or ruled out. The run produced a number and no explanation.
-#
-# A PodMonitor, not spec.monitoring.enablePodMonitor: CloudNativePG's docs mark
-# that field deprecated and slated for removal, and point at this instead.
-#
-# Two details decide whether this works at all, and both fail silently:
-#
-#   - release: monitoring — kube-prometheus-stack's Prometheus is configured with
-#     podMonitorSelector matchLabels release=monitoring. Without this label the
-#     object is created, looks correct, and is never read.
-#   - port: metrics — the name of the container port, not a number. The instance
-#     pods expose postgresql:5432, metrics:9187, status:8000.
-#
-# The metrics themselves need no custom queries: the operator's default set
-# (cnpg-default-monitoring) already includes `backends` and `backends_waiting`,
-# both read from pg_stat_activity — which is exactly the question the load test
-# could not answer.
+# Scrapes CloudNativePG metrics, including backends and backends_waiting.
+# PodMonitor rather than the deprecated spec.monitoring.enablePodMonitor.
+# Both of these fail silently if wrong:
+#   release: monitoring  matches Prometheus's podMonitorSelector
+#   port: metrics        the container port name (9187)
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
@@ -35,7 +18,5 @@ spec:
       cnpg.io/cluster: postgres
   podMetricsEndpoints:
     - port: metrics
-      # Matches the envoy scrape interval for the same reason: connection counts
-      # and backend states have to be readable per load-test stage, and at the
-      # global 30s the shortest stable rate window is wider than a stage.
+      # 10s, like the envoy scrape, so per-stage rates are readable.
       interval: 10s

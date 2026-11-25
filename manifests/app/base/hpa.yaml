@@ -1,15 +1,5 @@
-# Autoscaling for the two stateless tiers.
-#
-# maxReplicas is deliberately low. A runaway HPA on a trial credit is a real way
-# to lose the credit, and the spot pool's own autoscaler tops out at 3 nodes —
-# asking for more replicas than the pool can hold produces pending pods, not
-# capacity.
-#
-# The behaviour block is not decoration. Kubernetes' defaults scale down after a
-# 5-minute stabilisation window and scale up fast, which under a load test looks
-# like the HPA overshooting and then oscillating. Scaling up quickly and down
-# slowly is what you want for request-serving tiers: adding a pod too early
-# costs a little, removing one too early costs errors.
+# Autoscaling for web and api. maxReplicas stays within what the spot pool
+# can hold. Scale up fast, down slowly: removing pods too early costs errors.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -47,9 +37,7 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: api
 spec:
-  # A Rollout, not a Deployment — the HPA scales whatever the canary controller
-  # owns. Left pointing at a Deployment it would silently find nothing and never
-  # scale, which reads as "the HPA is not working" rather than as a wrong ref.
+  # Targets the Rollout, not a Deployment.
   scaleTargetRef:
     apiVersion: argoproj.io/v1alpha1
     kind: Rollout

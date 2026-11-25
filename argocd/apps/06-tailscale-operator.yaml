@@ -1,15 +1,6 @@
-# Tailscale operator — wave -1, because everything that reaches the tailnet
-# depends on it and it must exist before any Service asks for a tailnet address.
-#
-# What it is for here: the admin UIs (Argo CD, later Longhorn) are reachable over
-# the tailnet and nowhere else. No public ingress, no LoadBalancer with a routable
-# address, no Funnel. Longhorn's UI in particular ships with no authentication of
-# its own — anyone who can reach it can delete volumes.
-#
-# The OAuth credentials are NOT here. The chart creates its own operator-oauth
-# Secret only when oauth.clientId is set, so leaving it empty lets the
-# ExternalSecret in manifests/external-secrets own that Secret instead, and the
-# credentials stay in Secret Manager.
+# Tailscale operator, wave -1: admin UIs (Argo CD, Longhorn, Grafana) are
+# tailnet-only. OAuth credentials come from an ExternalSecret
+# (manifests/external-secrets), not from this chart.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -25,19 +16,16 @@ spec:
     targetRevision: 1.102.3
     helm:
       values: |
-        # Left empty deliberately — see above. With clientId unset the chart
-        # renders no Secret, and the pre-created operator-oauth is used.
+        # Empty so the chart doesn't render its own operator-oauth Secret.
         oauth:
           clientId: ""
           clientSecret: ""
 
         operatorConfig:
-          # The tag the operator identifies as. Must be owned by nobody in
-          # tagOwners, so only this credential can assume it.
+          # Must have no owner in tagOwners, so only this credential can use it.
           defaultTags:
             - "tag:k8s-operator"
-          # A controller, like Argo CD itself: it holds the mapping between
-          # Services and tailnet devices, so it belongs on the stable pool.
+          # Stable pool: it maps Services to tailnet devices.
           nodeSelector:
             kubernetes.io/os: linux
             workload: stateful

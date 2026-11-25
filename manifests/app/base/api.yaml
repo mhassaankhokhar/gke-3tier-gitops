@@ -1,46 +1,34 @@
-# The api tier: the only thing that talks to Postgres.
-#
-# Its own ServiceAccount, because identity is what the mesh's authorization
-# rules are written against — "allow from the web service account" is a claim
-# Envoy can verify with mTLS, unlike a namespace or an IP.
+# The api tier: the only workload that talks to Postgres. Own ServiceAccount,
+# because mesh authorization rules match on mTLS identity.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: api
 automountServiceAccountToken: false
 ---
-# A Rollout, not a Deployment.
-#
-# A Deployment can only do a rolling update: it swaps pods a few at a time and
-# has no notion of sending a fraction of *traffic* anywhere. A canary is a
-# traffic decision, so it needs the mesh to split requests and this controller
-# to move the split over time.
+# A Rollout, not a Deployment: canaries need a traffic split, which a
+# Deployment can't do.
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
   name: api
 spec:
   replicas: 2
-  # Keep the previous version's ReplicaSet so a failed canary can be aborted
-  # back to something that is already running, rather than re-pulled.
+  # Keeps the previous ReplicaSet for a fast abort.
   revisionHistoryLimit: 2
   strategy:
     canary:
-      # Two Services selecting the same pods; Rollouts keeps their selectors
-      # pointed at the right ReplicaSet as the canary progresses.
+      # Both Services select api pods; Rollouts manages their selectors.
       canaryService: api-canary
       stableService: api-stable
       trafficRouting:
         istio:
           virtualService:
             name: api
-            # Must match the named http route in the VirtualService — Rollouts
-            # rewrites the weights on that route and nothing else.
+            # Must match the named route in the VirtualService.
             routes:
               - primary
-      # Percentages, with a pause at each. The pauses are what make this a
-      # canary rather than a slower rolling update: they are where you watch
-      # error rates before more traffic moves.
+      # Pauses are where error rates are checked before more traffic moves.
       steps:
         - setWeight: 20
         - pause: { duration: 60s }
@@ -56,8 +44,7 @@ spec:
         app: api
     spec:
       serviceAccountName: api
-      # Stateless: it holds nothing a preemption would lose, so it belongs on
-      # the cheap pool. That is the whole reason the pools are split.
+      # Stateless, so it runs on spot.
       nodeSelector:
         workload: stateless
       containers:
@@ -69,17 +56,15 @@ spec:
           env:
             - name: PORT
               value: "3000"
-            # -rw is CloudNativePG's service for the primary. Writes must not
-            # go to -ro or -r, which point at replicas.
+            # -rw is CloudNativePG's primary service.
             - name: DBHOST
               value: postgres-rw.database.svc.cluster.local
             - name: DBPORT
               value: "5432"
             - name: DB
               value: app
-            # Projected from Secret Manager by External Secrets — the same
-            # object CloudNativePG bootstrapped the user from, so the two cannot
-            # drift. The password is in neither Git nor Terraform state.
+            # From Secret Manager via External Secrets, the same source CloudNativePG
+            # bootstrapped the user from.
             - name: DBUSER
               valueFrom:
                 secretKeyRef:
@@ -90,16 +75,10 @@ spec:
                 secretKeyRef:
                   name: postgres-app-credentials
                   key: password
-            # CloudNativePG serves TLS 1.3 and issues its own certificates, so
-            # this connection is encrypted without the mesh being involved.
+            # CloudNativePG serves TLS 1.3 itself.
             - name: DBSSL
               value: "true"
-            # Redis moved here from the web tier. It was a session store for a
-            # server-rendered page; a SPA talking to a JSON API has no
-            # server-side session, so rather than keep a component with no
-            # purpose it now caches the summary aggregation — three queries
-            # every page load wants. The cache fails open: if Redis is down this
-            # gets slower, not broken.
+            # Caches the summary aggregation; fails open if Redis is down.
             - name: REDIS_URL
               value: redis://redis.app.svc.cluster.local:6379
           resources:
@@ -108,8 +87,7 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
-          # Readiness checks the dependency: a pod that cannot reach it should
-          # leave the Service. Failing this removes traffic, nothing more.
+          # Readiness checks Postgres; failing removes the pod from the Service.
           readinessProbe:
             httpGet:
               path: /readyz
@@ -117,23 +95,15 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
-          # Liveness asks only whether the process is alive, and asks it of a
-          # handler that touches nothing else.
-          #
-          # Both probes previously pointed at /api/status — the expensive path,
-          # reaching Postgres. Under load it took 2-5s against the 1s default
-          # timeout, so Kubernetes killed pods that were healthy and merely
-          # busy, and the survivors inherited the load and were killed in turn.
-          # 9 and 11 restarts in a single load test.
+          # Liveness hits /healthz, which touches nothing else, so a slow database
+          # doesn't get busy pods killed.
           livenessProbe:
             httpGet:
               path: /healthz
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 10
-            # Generous on purpose. A liveness probe exists to catch a wedged
-            # process, not a slow one — and killing a busy pod makes the load
-            # worse, never better.
+            # Catches a wedged process, not a slow one.
             timeoutSeconds: 5
             failureThreshold: 6
 ---
@@ -149,11 +119,8 @@ spec:
       port: 80
       targetPort: 3000
 ---
-# Two more Services, both selecting app=api.
-#
-# Rollouts adds a pod-template-hash to each selector as the canary runs, so at
-# any moment `api-stable` points at the old ReplicaSet and `api-canary` at the
-# new one. They look redundant in Git and are not at runtime.
+# Rollouts adds a pod-template-hash to these selectors at runtime: stable →
+# old ReplicaSet, canary → new.
 apiVersion: v1
 kind: Service
 metadata:
@@ -178,13 +145,8 @@ spec:
       port: 80
       targetPort: 3000
 ---
-# The split itself.
-#
-# No `gateways` field, so this applies to mesh-internal traffic — which is all
-# the api gets, since only web calls it. The weights below are the starting
-# point; Argo Rollouts rewrites them on the route named `primary` as it walks
-# the steps, and writes them back to 100/0 when the canary is promoted or
-# aborted. Git holds the resting state, not the in-flight one.
+# Mesh-internal split (no gateways). Rollouts rewrites the `primary` route
+# weights during a canary; Git holds the resting 100/0.
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:

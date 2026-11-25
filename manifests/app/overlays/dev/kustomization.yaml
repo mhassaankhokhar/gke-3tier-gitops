@@ -1,13 +1,5 @@
-# The dev overlay — and the one file CI writes to.
-#
-# `kustomize edit set image` rewrites the `newName`/`newTag` pairs below, so a
-# deploy is a one-line commit here rather than an edit anywhere in the base.
-# That is the whole contract between the build pipeline and this repository:
-# the pipeline names an image, and Argo CD does the deploying.
-#
-# The tags are exact commit SHAs, never `latest`. A moving tag means the
-# cluster's contents stop being a function of this repository — two syncs of the
-# same commit could run different code.
+# The dev overlay, and the only file CI writes: `kustomize edit set image`
+# updates newName/newTag. Tags are commit SHAs, never `latest`.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -22,43 +14,14 @@ images:
   newName: us-central1-docker.pkg.dev/project-f9515611-f8df-4c08-8cb/gke-3tier/web
   newTag: 3cac1244efd367be9ca0f56eafd45b18c17bf765
 
-  # dynamicStableScale is a dev concession, not a default worth inheriting —
-  # which is why it is patched here rather than set in the base.
-  #
-  # Without it a canary runs old and new at full size at once, so a rollout
-  # needs roughly double the pods. This node pool cannot fit that: the rollout
-  # deadlocked with new pods Pending and old ones unable to leave. With it, the
-  # stable ReplicaSet scales down as canary traffic rises — at 20% canary,
-  # stable drops to 80% — and the total never exceeds spec.replicas.
-  #
-  # The cost is the reason production should keep the default: aborting a bad
-  # canary means the stable version has already been scaled down, so recovering
-  # full capacity takes as long as starting pods. The default spends spare
-  # capacity to buy an instant rollback, and in production that trade is worth
-  # making. Here there is no spare capacity to spend.
+  # dynamicStableScale (dev only): stable scales down as the canary scales up,
+  # so a rollout fits this pool. The trade-off is a slower abort; production should
+  # keep the default.
 
-# Cycle the pods to pick up mesh configuration that only applies at start.
-#
-# Bumped again for proxyStatsMatcher in 11-istiod.yaml: Istio's docs state the
-# proxy must restart to pick up a stats matcher, so an existing pod keeps the
-# stat set it booted with — and that stat set is the one that made the last load
-# test unexplainable. Before that, the same field cycled pods onto the smaller
-# sidecar CPU request.
-#
-# restartAt rather than `kubectl rollout restart`. It is a field on the Rollout,
-# so the restart is a commit like everything else — and per Argo Rollouts' docs
-# it recreates pods in place rather than running the canary steps, honouring
-# maxUnavailable and any PodDisruptionBudget. Each replacement asks for 70m less
-# than the pod it replaces, so the pressure drops as it goes rather than at the
-# end.
-#
-# The timestamp stays here afterwards: pods newer than it are left alone, so
-# this is idempotent, and the value is a record of when the pods were last
-# cycled.
-# Redis is a Deployment, which has no restartAt — the annotation below is what
-# `kubectl rollout restart` writes, stated in the file instead of typed at a
-# prompt. One replica, so the cache is briefly unavailable; a miss falls through
-# to Postgres.
+# restartAt cycles Rollout pods through Git (in place, not via canary steps).
+# Pods newer than the timestamp are left alone. Bump it when mesh config that
+# applies only at pod start changes (e.g. proxyStatsMatcher in 11-istiod.yaml).
+# Redis is a Deployment, so it uses the restartedAt annotation instead.
 patches:
 - patch: |
     - op: add

@@ -1,17 +1,12 @@
-# The database.
-#
-# Two instances, not three: the stable pool has two nodes, and CloudNativePG's
-# default anti-affinity is `preferred`, so a third would quietly land beside one
-# of the others and add a replica without adding a failure domain.
+# The database: two instances, one per stable node.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: database
   annotations:
     argocd.argoproj.io/sync-wave: "6"
-  # Note what is absent: no istio-injection label. See 12-cnpg-operator.yaml —
-  # CNPG names Istio sidecars as a cause of connectivity failures during
-  # startup, and it already does its own TLS.
+  # No istio-injection label: CloudNativePG does its own TLS and sidecars break
+  # its startup (see 12-cnpg-operator.yaml).
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -23,59 +18,27 @@ metadata:
 spec:
   instances: 2
 
-  # RWO, one volume per instance — not the RWX class Longhorn provides.
-  # Replication belongs to Postgres, which does it properly; a shared
-  # NFS-backed filesystem under a database invites locking and fsync problems.
-  # standard-rwo is GCP's pd-balanced, attached to one node at a time.
+  # RWO pd-balanced per instance; Postgres replicates, so no RWX/NFS.
   storage:
     size: 5Gi
     storageClass: standard-rwo
 
-  # Both instances on the stable pool. A preempted Postgres is either a
-  # failover or, for the primary, a write outage — and on spot that is a
-  # routine event rather than an incident.
+  # Stable pool: preemption would mean routine failovers.
   affinity:
     nodeSelector:
       workload: stateful
-    # required, not the default preferred — and this is the correction to the
-    # comment at the top of this file. It reasoned that a third instance would
-    # land beside an existing one under `preferred`, and stopped there. Two do
-    # the same thing: both instances were on stateful-7t7z, a two-instance HA
-    # Postgres with both copies in one failure domain, which is not HA at all.
-    #
-    # topologyKey is the default kubernetes.io/hostname. The cluster is zonal,
-    # so spreading by zone would place nothing.
-    #
-    # The cost is stated plainly in CloudNativePG's docs: with `required` and
-    # fewer nodes than instances, a pod stays Pending. That is the right
-    # failure. Two stateful nodes, two instances — and a replica that can only
-    # exist beside its primary is not adding a copy, it is adding a pod.
+    # required, not preferred: two instances must sit on two nodes. With fewer
+    # nodes than instances a pod stays Pending, which is the intended failure.
     enablePodAntiAffinity: true
     podAntiAffinityType: required
 
   postgresql:
     parameters:
-      # 200, because the application's pool is about to ask for more than the
-      # default 100 can serve.
-      #
-      # The arithmetic that decides this number is the api HPA's ceiling, not a
-      # guess: six api pods at a pool of 25 is 150 connections, plus streaming
-      # replication and the metrics exporter. At max_connections 100 the pods
-      # would simply fail to connect once past the fourth, and the error would
-      # read as the database being down.
-      #
-      # Raised together with the pool and never after it — a pool allowed to
-      # open connections the server will refuse fails at peak load, which is the
-      # one moment it matters.
+      # Covers the api pool ceiling (6 pods × 25 = 150) plus replication and the
+      # exporter. Raise together with api/db.js.
       max_connections: "200"
 
-  # Sized for a trial credit, and stated rather than defaulted.
-  #
-  # 1Gi, up from 512Mi, because connections cost memory: each backend is a
-  # process. Measured at 198Mi peak on the primary with roughly 60 connections
-  # open, against the 512Mi limit — going to 150 leaves too little margin, and a
-  # Postgres OOMKilled mid-load-test would look like the application failing.
-  # Stable nodes are at 30-40% memory requested, so the room exists.
+  # 1Gi: each connection is a backend process; sized for ~150 connections.
   resources:
     requests:
       cpu: 100m
@@ -87,16 +50,8 @@ spec:
     initdb:
       database: app
       owner: app
-      # The password is supplied rather than generated, and not by preference.
-      #
-      # The operator will generate one, but it lands in a Secret in this
-      # namespace only, and a Kubernetes Secret cannot be read across
-      # namespaces — so the api pods in `app` would have no way to reach it.
-      # Held in Secret Manager instead and projected into both namespaces by
-      # External Secrets, which is how the Cloudflare token and the Argo CD
-      # deploy key already work.
-      #
-      # The secret must be kubernetes.io/basic-auth and its username must equal
-      # the owner above.
+      # Supplied, not generated: the api in the app namespace needs it, and Secrets
+      # don't cross namespaces. Projected from Secret Manager into both. Must be
+      # kubernetes.io/basic-auth with username = owner.
       secret:
         name: postgres-app-credentials

@@ -17,9 +17,7 @@ spec:
     namespace: database
   syncPolicy:
     automated:
-      # prune off. Pruning a Cluster resource deletes the database, and a
-      # rendering difference is not a good enough reason for that to happen
-      # unattended. Removing it is a deliberate act.
+      # Off: pruning the Cluster deletes the database.
       prune: false
       selfHeal: true
     syncOptions:

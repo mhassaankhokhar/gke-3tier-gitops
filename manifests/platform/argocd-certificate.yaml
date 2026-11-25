@@ -1,14 +1,5 @@
-# The certificate Argo CD serves.
-#
-# argocd-server reads tls.crt and tls.key from a Secret named argocd-server-tls
-# in its own namespace, picks up renewals without a restart, and Argo CD's docs
-# state the Secret is safe to manage with cert-manager. So no ingress controller
-# and no gateway are involved: the Service is exposed on the tailnet and
-# argocd-server terminates TLS itself.
-#
-# The name resolves to a tailnet address, so this certificate is only ever
-# presented to someone already on the tailnet. It is a real certificate anyway —
-# a self-signed one trains you to click through warnings.
+# Argo CD's serving certificate. argocd-server reads argocd-server-tls and
+# reloads on renewal; no ingress involved.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

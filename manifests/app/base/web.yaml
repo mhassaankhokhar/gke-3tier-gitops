@@ -1,14 +1,11 @@
-# The web tier: serves the page, calls the api, keeps sessions in Redis.
+# The web tier: nginx serving the SPA and proxying /api to the api.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: web
 automountServiceAccountToken: false
 ---
-# A Rollout, like api. A new web version can break just as easily, and it is
-# the one users actually see — so it gets the same 20/50/100 walk, with the
-# difference that this traffic arrives from the internet rather than from
-# inside the mesh.
+# A Rollout like api, with the same canary steps; this traffic comes from the gateway.
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
@@ -47,23 +44,17 @@ spec:
         - name: web
           image: web
           ports:
-            # 8080, not 80: a port below 1024 needs root or an added
-            # capability, and nginx has no reason to run as root here.
+            # Unprivileged port, so nginx runs as non-root.
             - containerPort: 8080
               name: http
-          # No environment at all. The API address is not in the bundle —
-          # nginx proxies /api to the api Service, so the client asks its own
-          # origin and one image runs in any environment. The session secret is
-          # gone with the sessions: a SPA and a JSON API have no server-side
-          # session to sign.
+          # No environment: the bundle has no API URL (nginx proxies /api).
           resources:
             requests:
               cpu: 50m
               memory: 64Mi
             limits:
               memory: 256Mi
-          # Readiness checks the dependency: a pod that cannot reach it should
-          # leave the Service. Failing this removes traffic, nothing more.
+          # Readiness checks the api; failing removes the pod from the Service.
           readinessProbe:
             httpGet:
               path: /readyz
@@ -71,23 +62,14 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
-          # Liveness asks only whether the process is alive, and asks it of a
-          # handler that touches nothing else.
-          #
-          # Both probes previously pointed at / — the expensive path,
-          # reaching Postgres. Under load it took 2-5s against the 1s default
-          # timeout, so Kubernetes killed pods that were healthy and merely
-          # busy, and the survivors inherited the load and were killed in turn.
-          # 9 and 11 restarts in a single load test.
+          # Liveness hits /healthz, which touches nothing else.
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
-            # Generous on purpose. A liveness probe exists to catch a wedged
-            # process, not a slow one — and killing a busy pod makes the load
-            # worse, never better.
+            # Catches a wedged process, not a slow one.
             timeoutSeconds: 5
             failureThreshold: 6
 ---
@@ -127,14 +109,8 @@ spec:
       port: 80
       targetPort: 8080
 ---
-# The public route.
-#
-# Attached to the Gateway in istio-system, so this governs traffic arriving from
-# the internet — unlike the api VirtualService, which has no gateways field and
-# therefore only affects mesh-internal calls.
-#
-# Weights here are the resting state; Argo Rollouts rewrites them on the route
-# named `primary` while a canary runs and settles them back afterwards.
+# The public route, bound to the istio-system Gateway. Rollouts rewrites the
+# `primary` route weights during a canary; Git holds the resting state.
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:

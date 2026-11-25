@@ -1,67 +1,37 @@
-# Argo CD manages its own chart.
-#
-# Terraform installs Argo CD once, because a GitOps controller cannot install
-# itself, and then stops — its helm_release carries lifecycle.ignore_changes.
-# Everything about how Argo CD actually runs lives here, which is the same rule
-# every other component follows: Terraform owns cloud resources, Git owns what
-# runs inside the cluster.
-#
-# This file exists because that rule was broken. Argo CD's TLS setting and its
-# Service were written into the Terraform module, and turning that Service into
-# a LoadBalancer made `terraform apply` block for ten minutes waiting on an
-# address a mis-tagged tailnet never issued — an infrastructure pipeline failing
-# on a Kubernetes object. As an Application the same mistake is an app stuck in
-# Progressing, retrying, with the pipeline untouched.
-#
-# The self-management caveat, stated rather than discovered: a bad value here is
-# applied by the thing it breaks. Recovery is `helm rollback argocd -n argocd`,
-# not another commit.
+# Argo CD manages its own chart. Terraform installs it once (ignore_changes);
+# all runtime config lives here. A bad value here breaks the thing that applies
+# it: recover with `helm rollback argocd -n argocd`.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: argocd
   namespace: argocd
   annotations:
-    # Last. Syncing this restarts argocd-server, so it should not happen in the
-    # middle of the waves that other components depend on.
+    # Syncing restarts argocd-server, so it runs after the platform waves.
     argocd.argoproj.io/sync-wave: "5"
 spec:
   project: default
   source:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argo-cd
-    # Same pin as the Terraform seed. They must not drift: Terraform installs
-    # this version on an empty cluster and this Application takes it from there.
+    # Same version as the Terraform install (modules/argocd); keep them in step.
     targetRevision: 10.4.1
     helm:
       values: |
         global:
-          # Argo CD holds the cluster's desired state; on a preemptible node,
-          # reconciliation stops exactly when the node is reclaimed.
+          # Stable pool: reconciliation must survive spot preemption.
           nodeSelector:
             workload: stateful
 
         configs:
           params:
-            # TLS on. argocd-server reads tls.crt and tls.key from a Secret
-            # named argocd-server-tls in its own namespace and picks up renewals
-            # without restarting, so cert-manager owns the certificate — issued
-            # over DNS-01, because nothing here is reachable from the public
-            # internet for an HTTP challenge. Nothing else terminates TLS: no
-            # ingress controller, no gateway.
+            # TLS from the argocd-server-tls Secret (cert-manager, DNS-01); reloaded
+            # without a restart. Nothing else terminates TLS.
             server.insecure: false
 
-          # Makes the sync waves in this directory wait. Argo CD 1.8 removed
-          # the health assessment for argoproj.io/Application, so a child app
-          # counted as Healthy as soon as it was created, and the next wave
-          # started straight away. On the 2026-11-25 rebuild, app (wave 8)
-          # synced about 2.5 min before the postgres Cluster (wave 7) existed,
-          # and api crash-looped on its startup migration.
-          #
-          # The Terraform install (modules/argocd) sets the same key, because
-          # the first sync runs on that install's argocd-cm. It is repeated here
-          # so this Application doesn't remove it when it takes over the chart.
-          # Script from the Argo CD docs, operator-manual/health, "Argocd App".
+          # Restores the argoproj.io/Application health check (removed in Argo CD 1.8)
+          # so sync waves wait for each wave to be Healthy. Same key as the Terraform
+          # install in modules/argocd. Script from the Argo CD docs (operator-manual/health).
           cm:
             resource.customizations.health.argoproj.io_Application: |
               hs = {}
@@ -77,8 +47,7 @@ spec:
               end
               return hs
 
-        # One cluster, one operator. HA mode triples the footprint on a node
-        # pool sized for a trial credit.
+        # Single replicas; HA mode triples the footprint.
         controller:
           replicas: 1
         repoServer:
@@ -89,39 +58,25 @@ spec:
         server:
           replicas: 1
 
-          # Reachable over the tailnet and nowhere else.
-          #
-          # loadBalancerClass hands the Service to the Tailscale operator rather
-          # than GCP's load balancer controller, so the address is in CGNAT
-          # space: unroutable from the internet, reachable by anyone on the
-          # tailnet. No public ingress, no Funnel, no firewall rule to get wrong
-          # later.
+          # Tailscale LoadBalancer: a CGNAT address reachable only from the tailnet.
           service:
             type: LoadBalancer
             loadBalancerClass: tailscale
             annotations:
-              # Pins the proxy pod to the stable pool. The operator applies no
-              # node selector by default, and a preempted proxy is a dropped
-              # admin session at the moment you most need one.
+              # Keeps the proxy pod on the stable pool.
               tailscale.com/proxy-class: stable-pool
 
-              # The machine name inside the tailnet — what MagicDNS and the
-              # device list show. Distinct from the DNS name below.
+              # Tailnet machine name.
               tailscale.com/hostname: argocd
 
-              # external-dns already watches Services, so this annotation is the
-              # whole of the DNS setup. The record points at a CGNAT address;
-              # Cloudflare accepts those and forces them DNS-only, since there
-              # is nothing to proxy to.
+              # external-dns creates the record (CGNAT address, DNS-only in Cloudflare).
               external-dns.alpha.kubernetes.io/hostname: argo.mhassankhokhar.site
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
   syncPolicy:
     automated:
-      # prune off, deliberately. This Application manages the controller that
-      # performs the prune; a momentary rendering difference would have Argo CD
-      # delete its own Deployment and leave nothing running to put it back.
+      # Off: a rendering glitch could prune Argo CD's own Deployment.
       prune: false
       selfHeal: true
     syncOptions:

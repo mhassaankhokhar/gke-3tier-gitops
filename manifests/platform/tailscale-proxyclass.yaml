@@ -1,14 +1,6 @@
-# Where the Tailscale proxy pods run.
-#
-# The operator applies no node selector by default, so a proxy would be free to
-# land on the spot pool — and a preempted proxy is a dropped admin session at the
-# moment you most likely need one. These carry the connection itself, not just
-# control traffic, so they go on the stable pool.
-#
-# Referenced by annotation on each Service rather than through the chart's
-# proxyConfig.defaultProxyClass. The default would be evaluated by the operator
-# before this CR can exist — its CRD arrives with the operator — so the ordering
-# is avoided rather than managed.
+# Keeps Tailscale proxy pods (which carry admin sessions) on the stable pool.
+# Referenced per Service by annotation, not as the chart default: the default is
+# read before this CRD exists.
 apiVersion: tailscale.com/v1alpha1
 kind: ProxyClass
 metadata:

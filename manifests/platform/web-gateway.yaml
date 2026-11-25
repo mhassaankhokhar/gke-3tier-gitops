@@ -1,8 +1,5 @@
-# TLS for the public name, and the Gateway that serves it.
-#
-# Both live in istio-system rather than with the app: an Istio Gateway reads its
-# certificate from a Secret in the namespace its ingress gateway pods run in,
-# not from the namespace of the workload behind it.
+# Public TLS certificate and Gateway. In istio-system because the gateway
+# reads certificates from its own namespace.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -36,9 +33,7 @@ spec:
         protocol: HTTP
       hosts:
         - gke-3tier.mhassankhokhar.site
-      # Port 80 exists only to send people to 443. Serving the site on both
-      # would mean the session cookie — which is marked Secure — silently never
-      # arrives for anyone who typed the bare hostname.
+      # Port 80 only redirects to 443.
       tls:
         httpsRedirect: true
     - port:
@@ -49,22 +44,11 @@ spec:
         - gke-3tier.mhassankhokhar.site
       tls:
         mode: SIMPLE
-        # The Secret cert-manager writes above. Istio reads it by name from this
-        # namespace; a Secret elsewhere is simply not found, and the listener
-        # comes up serving nothing.
+        # Must be in this namespace, or the listener serves nothing.
         credentialName: gke-3tier-tls
 ---
-# Grafana's certificate.
-#
-# Issued even though Grafana is only reachable over the tailnet, for the same
-# reason Argo CD's is: the browser decides the scheme, not the server. Other
-# hosts on this domain are HTTPS, so browsers try HTTPS here too — and a plain
-# HTTP service simply does not answer. Serving a real certificate is less work
-# than arguing with HSTS, and a self-signed one trains people to click through
-# warnings.
-#
-# DNS-01, because Let's Encrypt cannot reach a CGNAT address to validate over
-# HTTP. Proving control of the zone works regardless of where the host lives.
+# Grafana's certificate (tailnet-only, but browsers expect HTTPS on this
+# domain). DNS-01, because the CGNAT address can't be validated over HTTP.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

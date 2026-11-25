@@ -1,13 +1,5 @@
-# Argo Rollouts — wave 5, before the application that uses it.
-#
-# A Rollout replaces a Deployment for the api tier. A Deployment can only do a
-# rolling update: it swaps pods a few at a time and has no notion of sending a
-# fraction of *traffic* to the new version. A canary is a traffic decision, not
-# a pod-count decision, which is why it needs both this controller and the mesh.
-#
-# Note what this does NOT do: it does not deploy. Argo CD still owns what is in
-# the cluster; Rollouts owns how a new version takes over from the old one once
-# Argo CD has applied it.
+# Argo Rollouts, wave 5: canary releases for web and api via Istio traffic
+# weights. Argo CD still applies the manifests; Rollouts manages the transition.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -24,8 +16,7 @@ spec:
     helm:
       values: |
         controller:
-          # It drives rollouts and rewrites VirtualService weights; losing it
-          # mid-canary would strand traffic at whatever split it had reached.
+          # Stable pool: losing it mid-canary would leave traffic at a partial split.
           nodeSelector:
             workload: stateful
         dashboard:

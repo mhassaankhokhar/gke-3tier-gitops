@@ -1,14 +1,6 @@
-# Prometheus and Grafana — wave 6, after the mesh so its metrics exist to scrape.
-#
-# Sized deliberately rather than left at the chart's defaults, which assume a
-# production cluster and request more CPU than this pool has free. The stateful
-# nodes have roughly 1.2 cores unreserved between them; the defaults ask for
-# more than that on their own, and the result would be Pending pods — the same
-# failure this cluster has already produced three times.
-#
-# Alertmanager is off. There is nowhere to send an alert yet, and an alerting
-# component with no destination is a thing that looks like monitoring without
-# being it. It goes on when there is a channel to page.
+# Prometheus and Grafana, wave 6 (after the mesh). Resources sized to fit the
+# stable pool; the chart defaults leave pods Pending. Alertmanager is off until
+# there is a channel to send alerts to.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -24,10 +16,8 @@ spec:
     targetRevision: 88.6.1
     helm:
       values: |
-        # The CRDs are installed by 19-prometheus-operator-crds.yaml, one wave
-        # earlier, so they are Established before this operator starts and runs
-        # its one-time check. Shipped here, they raced the operator on every
-        # install from empty (2026-11-25).
+        # CRDs come from 19-prometheus-operator-crds.yaml a wave earlier: the operator
+        # checks for them once, at startup (prometheus-operator#7459).
         crds:
           enabled: false
 
@@ -49,10 +39,7 @@ spec:
             limits:   { memory: 192Mi }
 
         prometheus-node-exporter:
-          # No nodeSelector, deliberately. This is a DaemonSet reading each
-          # node's own CPU, memory and disk — excluding the spot pool would
-          # leave exactly the nodes a load test stresses without metrics, and
-          # the gap would look like the pool being idle rather than unmonitored.
+          # No nodeSelector: a DaemonSet that must cover every node, spot included.
           resources:
             requests: { cpu: 10m, memory: 32Mi }
             limits:   { memory: 64Mi }
@@ -60,62 +47,31 @@ spec:
         grafana:
           nodeSelector:
             workload: stateful
-          # Reached over the tailnet, like Argo CD. Grafana ships with a default
-          # admin login and a query interface over every metric in the cluster;
-          # that does not belong on the public internet.
+          # Tailnet only: Grafana exposes every metric and has an admin login.
           service:
             type: LoadBalancer
             loadBalancerClass: tailscale
-            # 443, and TLS terminated by Grafana itself. Being on the tailnet
-            # does not decide the scheme — the browser does, and since other
-            # hosts on this domain are HTTPS it tries HTTPS here too, then finds
-            # nothing listening. Serving a real certificate is less work than
-            # arguing with HSTS.
+            # Grafana terminates TLS itself; browsers expect HTTPS on this domain.
             port: 443
             targetPort: 3000
             annotations:
               tailscale.com/proxy-class: stable-pool
               tailscale.com/hostname: grafana
               external-dns.alpha.kubernetes.io/hostname: grafana.mhassankhokhar.site
-          # The admin login comes from Secret Manager through External Secrets,
-          # not from the chart.
-          #
-          # Left to itself the chart generates the password with randAlphaNum,
-          # and Argo CD renders with `helm template` on every sync — so it was a
-          # different password after every sync, and a login that worked
-          # yesterday failed today with nothing in any log, because nothing had
-          # failed. Rendering the same chart twice returns two different values;
-          # that is the whole bug.
-          #
-          # Keeping it out of Git was right, but the chart's own generation is
-          # not a substitute for storing it somewhere. The ExternalSecret is in
-          # manifests/external-secrets/grafana-admin.yaml, and it supplies both
-          # the admin-user and admin-password keys this expects — the dashboard
-          # and datasource sidecars read the same Secret to call Grafana's API.
+          # Admin credentials from Secret Manager via
+          # manifests/external-secrets/grafana-admin.yaml. The chart's generated password
+          # changes on every Argo CD render.
           admin:
             existingSecret: grafana-admin
 
-          # 512Mi, not the 256Mi this started at. Grafana was being OOMKilled
-          # (exit 137) roughly every two minutes once the two mesh dashboards
-          # were added — it sat at 242Mi against a 256Mi limit, and each restart
-          # showed in the browser as "Failed to fetch" rather than as anything
-          # naming memory. The original figure was chosen to keep a trial
-          # cluster small, before there was a real dashboard load to size
-          # against.
-          #
-          # The request goes up with it. A limit far above the request is a pod
-          # the scheduler believes is small and the kernel does not.
+          # Sized from observed usage with dashboards loaded (256Mi was OOMKilled).
+          # Request close to the limit so the scheduler sees the real size.
           resources:
             requests: { cpu: 50m, memory: 256Mi }
             limits:   { memory: 512Mi }
           persistence:
             enabled: false
-          # The probes have to follow the scheme. Grafana now serves HTTPS, and
-          # the chart's default probes speak HTTP — Grafana answered them with
-          # "client sent an HTTP request to an HTTPS server" and a 400, so the
-          # pod never became ready and the old HTTP one kept serving. Changing
-          # a server's protocol without changing what checks it is the same
-          # class of mistake as pointing a probe at an expensive endpoint.
+          # HTTPS probes, because Grafana serves HTTPS.
           readinessProbe:
             httpGet:
               path: /api/health
@@ -130,35 +86,23 @@ spec:
             timeoutSeconds: 30
             failureThreshold: 10
 
-          # Everything that talks to Grafana has to speak HTTPS now, not just
-          # the probes. Prometheus was still scraping http://<pod>:3000/metrics
-          # every 30s and getting "client sent an HTTP request to an HTTPS
-          # server" — so Grafana's own metrics were simply missing, with nothing
-          # failing to say so. insecureSkipVerify because the scrape goes to a
-          # pod IP and the certificate is issued for the public hostname.
+          # HTTPS scrape. insecureSkipVerify: the target is a pod IP, the cert is for the hostname.
           serviceMonitor:
             scheme: https
             tlsConfig:
               insecureSkipVerify: true
 
           sidecar:
-            # The two sidecars shipped with no requests and no limits at all,
-            # while using 73-75Mi each — a third of the pod's real memory,
-            # invisible to the scheduler. Sized from what they actually use.
+            # Sized from observed usage (~75Mi each).
             resources:
               requests: { cpu: 10m, memory: 96Mi }
               limits:   { memory: 192Mi }
-            # The dashboard sidecar posts a reload to Grafana after
-            # writing a ConfigMap, and that call was still HTTP. Grafana's file
-            # provider re-reads the folder every 30s regardless, so this only
-            # decides whether a new dashboard appears at once or on the next
-            # sweep — but a call that always fails is not a thing to leave in.
+            # Reload call goes over HTTPS.
             skipTlsVerify: true
             dashboards:
               reloadURL: "https://localhost:3000/api/admin/provisioning/dashboards/reload"
 
-          # The certificate cert-manager issues in manifests/platform. Grafana
-          # reads it from the mounted path below.
+          # Certificate issued by cert-manager (manifests/platform).
           extraSecretMounts:
             - name: grafana-tls
               secretName: grafana-tls
@@ -176,10 +120,7 @@ spec:
           prometheusSpec:
             nodeSelector:
               workload: stateful
-            # Seven days, capped at 10GB. retentionSize matters as much as
-            # retention: without it a busy fortnight fills the volume and
-            # Prometheus stops ingesting, which is a silent loss of exactly the
-            # data you wanted.
+            # retentionSize too, so a full volume can't stop ingestion.
             retention: 7d
             retentionSize: 9GB
             resources:
@@ -188,36 +129,20 @@ spec:
             storageSpec:
               volumeClaimTemplate:
                 spec:
-                  # RWO, not Longhorn's RWX. One Prometheus, one volume, and a
-                  # time-series database on shared NFS-backed storage invites
-                  # the same locking and fsync problems as a database would.
+                  # RWO, not Longhorn RWX: a TSDB shouldn't sit on NFS.
                   storageClassName: standard-rwo
                   accessModes: ["ReadWriteOnce"]
                   resources:
                     requests:
                       storage: 10Gi
 
-            # The chart's Prometheus discovers targets through ServiceMonitors,
-            # not through prometheus.io annotations — which is how Istio's
-            # sidecars advertise themselves. Without this job, every envoy_ and
-            # istio_ metric is missing: no request rates, no p95 by service, no
-            # mTLS visibility. The relabel rule below is Istio's own.
+            # Istio sidecars advertise via prometheus.io annotations, which the
+            # ServiceMonitor-based setup ignores; this job (Istio's relabel rules) collects
+            # the envoy_ and istio_ metrics.
             additionalScrapeConfigs:
               - job_name: 'istio-envoy-stats'
                 metrics_path: /stats/prometheus
-                # 10s, not the global 30s.
-                #
-                # A rate() needs several samples inside its window to be stable,
-                # so at a 30s scrape the shortest usable window was 2 minutes —
-                # which is longer than a load-test stage, and every per-stage
-                # number came out averaged across three different load levels.
-                # rate(...[30s]) returned nothing at all, because one sample
-                # cannot make a rate. At 10s a 40s window holds four samples and
-                # fits inside a stage.
-                #
-                # The cost is three times the samples from these targets. It is
-                # paid on the one job whose resolution decides whether a load
-                # test can be read, not globally.
+                # 10s, so a 40s rate() window has enough samples to read one load-test stage.
                 scrape_interval: 10s
                 kubernetes_sd_configs:
                   - role: pod
@@ -238,7 +163,5 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # Added for the stack's very large CRDs, which now live in
-      # 19-prometheus-operator-crds.yaml. Left on so this change doesn't also
-      # switch how every existing object here is applied.
+      # Kept on so existing objects keep their apply method.
       - ServerSideApply=true
