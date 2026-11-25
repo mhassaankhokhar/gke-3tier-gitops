@@ -24,6 +24,13 @@ spec:
     targetRevision: 88.6.1
     helm:
       values: |
+        # The CRDs are installed by 19-prometheus-operator-crds.yaml, one wave
+        # earlier, so they are Established before this operator starts and runs
+        # its one-time check. Shipped here, they raced the operator on every
+        # install from empty (2026-11-25).
+        crds:
+          enabled: false
+
         alertmanager:
           enabled: false
 
@@ -231,5 +238,7 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # The stack ships very large CRDs.
+      # Added for the stack's very large CRDs, which now live in
+      # 19-prometheus-operator-crds.yaml. Left on so this change doesn't also
+      # switch how every existing object here is applied.
       - ServerSideApply=true
