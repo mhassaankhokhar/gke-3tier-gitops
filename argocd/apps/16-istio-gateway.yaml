@@ -1,13 +1,5 @@
-# The ingress gateway — the only thing in this cluster with a public address.
-#
-# Everything else is reached over the tailnet: Argo CD, Longhorn's UI, the
-# database. This exists because the web tier is meant to be on the internet.
-#
-# Istio's own gateway chart rather than an ingress controller in front of it.
-# istiod is already running, Argo Rollouts drives Istio natively — the api tier's
-# canary already works this way — and one traffic API for both tiers beats two.
-# A separate nginx would add a hop that terminates TLS a second time and knows
-# nothing about the mesh behind it.
+# The ingress gateway, the only public address; everything else is
+# tailnet-only. Istio's gateway chart, so both tiers use one traffic API.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -30,14 +22,10 @@ spec:
 
         service:
           annotations:
-            # external-dns already watches Services, so this annotation is the
-            # whole of the DNS setup — it points the name at whatever public
-            # address GCP assigns the load balancer.
+            # external-dns points this name at the load balancer's address.
             external-dns.alpha.kubernetes.io/hostname: gke-3tier.mhassankhokhar.site
 
-          # A real cloud load balancer, not NodePort. NodePort only allocates
-          # 30000-32767, so it always needs something else listening on 80/443
-          # in front of it — which on a cloud is another load balancer anyway.
+          # A cloud load balancer: NodePort can't listen on 80/443.
           type: LoadBalancer
           ports:
             # Port 80 exists to redirect to 443, not to serve.
@@ -48,8 +36,7 @@ spec:
               port: 443
               targetPort: 8443
 
-        # On the stable pool. This is the front door: if it is preempted, the
-        # site is down until a replacement registers with the load balancer.
+        # Stable pool: it is the front door.
         nodeSelector:
           workload: stateful
 

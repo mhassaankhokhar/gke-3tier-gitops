@@ -1,9 +1,5 @@
-# Istio, part 3 of 3: the control plane.
-#
-# Wave 4, after base's CRDs and the CNI agent. istiod will start without the
-# agent, but pods injected before the agent is ready get no iptables rules and
-# their traffic silently bypasses the mesh — mTLS that appears to be on and is
-# not.
+# Istio, part 3 of 3: the control plane. Wave 4, after base's CRDs and the CNI
+# agent; pods injected before the agent is ready bypass the mesh.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -23,29 +19,9 @@ spec:
           platform: gke
 
           proxy:
-            # 30m, not the chart's 100m.
-            #
-            # Two numbers, and the request sits above both. Measured here over
-            # 24h, every sidecar in the app namespace peaked at 5-10m and sat
-            # at 4m. Istio's own performance page puts a proxy at 0.20 vCPU per
-            # 1000 requests per second, and the highest this tier has actually
-            # served is ~130 rps per replica pair — about 26m by that figure.
-            #
-            # The limit stays at the chart's 2 cores, so nothing is capped at
-            # the request: a burst still gets whatever the node has. What the
-            # request decides is how much the scheduler sets aside and, under
-            # contention, the proxy's share — and at 100m against 4m it was
-            # setting aside 25 times what was ever used. On a 940m e2-medium
-            # that was over a tenth of the node per pod, which is why the spot
-            # pool sat at 80% reserved against roughly 15% used.
-            #
-            # Memory is deliberately unchanged. 128Mi against a measured 53Mi
-            # peak is about 2.4x, and Istio puts a proxy at 60MB at 1000 rps —
-            # this is the resource that actually scales with mesh size, since
-            # each proxy holds the config for everything it can reach.
-            #
-            # Injection-time only: existing pods keep the requests they were
-            # created with until they are replaced.
+            # Sidecar request 30m: measured peaks are 5-10m. The CPU limit stays at the
+            # chart's 2 cores. Memory unchanged (128Mi vs 53Mi peak). Applies to newly
+            # injected pods only.
             resources:
               requests:
                 cpu: 30m
@@ -54,45 +30,18 @@ spec:
                 cpu: 2000m
                 memory: 1024Mi
 
-        # Tell istiod that the CNI agent is installed.
-        #
-        # Without this the agent runs on every node and does nothing: istiod
-        # keeps injecting the `istio-init` container, which applies the iptables
-        # rules itself and therefore needs NET_ADMIN, NET_RAW, uid 0 and a
-        # writable root filesystem — in every application pod. Verified against
-        # the live injector, which carried `pilot.cni.enabled: false` while
-        # `istio-cni-node` sat 5/5 ready.
-        #
-        # With it, the injected init container becomes `istio-validation`,
-        # running `--run-validation --skip-rule-apply`: it checks that the agent
-        # already wrote the redirection and applies nothing. Capabilities drop to
-        # ALL, the filesystem is read-only, and it runs as 1337 rather than root.
-        #
-        # It fails closed. A pod landing on a node whose agent is not ready yet
-        # cannot start, rather than starting outside the mesh — which matters
-        # here because the application tier is on spot nodes that arrive without
-        # warning, and a pod with no redirection would accept plaintext while
-        # STRICT mTLS appeared to be on.
-        #
-        # Only new pods change; existing ones keep the rules they already have.
+        # The CNI agent is installed, so injected pods get istio-validation instead of
+        # istio-init (no NET_ADMIN, non-root). Fails closed: a pod on a node whose agent
+        # isn't ready won't start outside the mesh.
         cni:
           enabled: true
 
         pilot:
-          # The control plane holds the mesh's configuration and certificate
-          # authority. On a preemptible node, losing it means new pods cannot
-          # get certificates — so it sits with the other controllers.
+          # Stable pool: it is the mesh's control plane and CA.
           nodeSelector:
             workload: stateful
-          # Two, on different nodes. istiod serves the sidecar injector
-          # (mutating, failurePolicy: Fail) and validates every Istio resource,
-          # so on one replica the node holding it decides whether any pod in the
-          # mesh can be created. It is also the mesh's certificate authority —
-          # losing it means new pods cannot get certificates.
-          #
-          # Fixed at two rather than autoscaled: autoscaling a control plane on
-          # a two-node pool has nothing to scale into, and the HPA would only
-          # add a pod that cannot be placed.
+          # Two replicas on different nodes: the injector webhook is failurePolicy: Fail.
+          # Fixed, not autoscaled; the stable pool has two nodes.
           replicaCount: 2
           topologySpreadConstraints:
             - maxSkew: 1
@@ -104,8 +53,7 @@ spec:
                 matchLabels:
                   istio: pilot
 
-          # One cluster, one mesh, a trial credit. Sized rather than left at the
-          # chart's defaults, which assume a production cluster.
+          # Sized for this cluster, not the chart's production defaults.
           autoscaleEnabled: false
           resources:
             requests:
@@ -115,29 +63,12 @@ spec:
               memory: 512Mi
 
         meshConfig:
-          # Envoy starts before the application container does.
-          #
-          # Without this the app can begin making outbound calls before the
-          # proxy is listening, and those calls fail — as connection refused,
-          # which reads like the callee is down rather than like a startup race.
+          # Envoy ready before the app starts, so early outbound calls don't get connection refused.
           defaultConfig:
             holdApplicationUntilProxyStarts: true
-            # Emit the cluster statistics the default set leaves out.
-            #
-            # Istio ships a deliberately minimal stat set — cluster_manager,
-            # listener_manager, server, and cluster.xds-grpc — to keep the
-            # proxy's memory down. Verified by asking Prometheus for
-            # envoy_cluster_upstream_rq_pending_active during a load test and
-            # getting xds-grpc and nothing else: the proxy's link to istiod, not
-            # a single application cluster.
-            #
-            # That is what made a run unexplainable. p95 was 2.2s with nothing
-            # CPU-saturated, so the request was waiting rather than working — and
-            # the queue it was waiting in is exactly what these stats count.
-            #
-            # Scoped rather than opened wide: connections, pending queues,
-            # retries, timeouts and outlier ejections. `.*` here would emit tens
-            # of thousands of series per proxy.
+            # Adds the cluster stats the minimal default set omits (pending queues,
+            # retries, outlier ejections), scoped to avoid a series explosion. Proxies pick
+            # this up only on restart. Access logs go to stdout.
             proxyStatsMatcher:
               inclusionRegexps:
                 - ".*upstream_cx_.*"
@@ -148,34 +79,18 @@ spec:
                 - ".*circuit_breakers.*"
               inclusionSuffixes:
                 - "upstream_rq_timeout"
-            #
-            # Istio's docs are explicit that the proxy must restart to pick this
-            # up — an existing pod keeps the stat set it started with.
-          # Access logs to stdout. A mesh whose traffic you cannot see is
-          # harder to reason about than no mesh at all.
           accessLogFile: /dev/stdout
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
-  # istiod writes its CA certificate into this webhook after the chart creates
-  # it, and the chart ships no caBundle at all — verified by rendering it. So
-  # the live object always carries a field Git does not, and the Application
-  # sits permanently OutOfSync while being entirely correct.
-  #
-  # Ignored rather than papered over with selfHeal off: selfHeal would keep
-  # blanking the field istiod just wrote, and blanking it breaks validation of
-  # every Istio resource until istiod notices and writes it back.
+  # istiod writes the caBundle into this webhook at runtime; the chart ships
+  # none, so it is ignored rather than reverted (reverting breaks validation).
   ignoreDifferences:
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration
       jsonPointers:
         - /webhooks/0/clientConfig/caBundle
-        # Same class of field, second instance. The chart ships
-        # failurePolicy: Ignore so that a cluster whose istiod is not up yet can
-        # still accept Istio resources; istiod switches it to Fail once it is
-        # ready to validate them. Reverting that would quietly turn off
-        # validation — invalid Istio config would be accepted and simply not
-        # work.
+        # istiod switches this from Ignore to Fail once ready; reverting disables validation.
         - /webhooks/0/failurePolicy
   syncPolicy:
     automated:

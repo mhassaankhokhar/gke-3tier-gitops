@@ -1,25 +1,7 @@
-# Prometheus Operator CRDs — wave 5, a wave before the operator in 17-monitoring.yaml.
-# The file number only reflects the order files were added; the wave sets the
-# sync order.
-#
-# Split out of kube-prometheus-stack because the operator checks which CRDs
-# exist only once, at startup, and never checks again. On the 2026-11-25
-# rebuild it checked at 16:47:56.815Z, the same second the prometheuses CRD
-# became Established. It logged `resource "prometheuses" ... not installed in
-# the cluster`, never started its Prometheus controller, and the Prometheus CR
-# sat unreconciled with no pod. Upstream:
-# prometheus-operator/prometheus-operator#7459 (open). The operator code has no
-# retry: cmd/operator/main.go checkPrerequisites at v0.93.1.
-#
-# Inside one chart, the CRDs and the operator are applied in the same sync, so
-# the race happens on every install from empty. In their own wave they are
-# separated: Argo CD's CRD health check stays Progressing until a CRD is
-# Established, and the Application health check in argocd-cm (08-argocd.yaml)
-# makes the root app wait for this wave to be Healthy before starting wave 6.
-#
-# Keep the version on the same operator release as kube-prometheus-stack in
-# 17-monitoring.yaml. 31.0.1 ships v0.93.1, the same version as
-# kube-prometheus-stack 88.6.1.
+# Prometheus Operator CRDs, wave 5: Established before the operator
+# (17-monitoring, wave 6) starts, because it checks for them only once at startup
+# (prometheus-operator#7459). Keep on the same operator version as
+# kube-prometheus-stack: 31.0.1 = v0.93.1 = kube-prometheus-stack 88.6.1.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -37,10 +19,7 @@ spec:
       values: |
         crds:
           annotations:
-            # Never deleted by Argo CD, from this app or from monitoring. These
-            # CRDs used to belong to kube-prometheus-stack, and that app prunes.
-            # Deleting a CRD deletes every ServiceMonitor, PodMonitor and
-            # Prometheus with it. Removing them is a deliberate manual step.
+            # Never pruned by Argo CD: deleting a CRD deletes every resource of that kind.
             argocd.argoproj.io/sync-options: Prune=false
   destination:
     server: https://kubernetes.default.svc

@@ -1,17 +1,6 @@
-# Longhorn — wave 1, after its node agent (wave 0) has installed iscsid.
-#
-# Provides the ReadWriteMany StorageClass.
-#
-# GKE's default pd-balanced is ReadWriteOnce: a volume attaches to one node at a
-# time, so two replicas on different nodes leave the second in
-# FailedAttachVolume. Longhorn fills that gap.
-#
-# NOT used for PostgreSQL. CloudNativePG gives each instance its own RWO volume
-# and replicates at the database layer; Postgres on shared NFS-backed storage
-# invites locking and fsync problems.
-#
-# Longhorn over Filestore (GCP's managed NFS) on purpose: it runs on any cluster,
-# so the same manifests still work on a local k3d cluster after the trial credit.
+# Longhorn, wave 1 (its node agent is wave 0): the ReadWriteMany StorageClass
+# for web/api. Postgres uses RWO pd-balanced instead. Chosen over Filestore so
+# the manifests also run off GCP.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -27,38 +16,14 @@ spec:
     targetRevision: 1.12.1
     helm:
       values: |
-        # Longhorn's pre-upgrade check runs as a Helm pre-upgrade hook. ArgoCD
-        # translates Helm hooks into PreSync, so it fires even on a first install
-        # — before the ServiceAccount it needs exists, leaving the Job stuck on
-        # "serviceaccount longhorn-service-account not found" and the Application
-        # permanently Missing.
-        #
-        # The chart's own values.yaml says to disable this "when installing
-        # Longhorn using Argo CD or other GitOps solutions".
+        # Disabled as the chart's values.yaml advises for Argo CD: the pre-upgrade
+        # hook runs as PreSync on first install, before its ServiceAccount exists.
         preUpgradeChecker:
           jobEnabled: false
 
-        # Pinned to the stable pool. Longhorn replicates volume data across the
-        # nodes it runs on — putting replicas on preemptible nodes means constant
-        # rebuilds, which is the opposite of what a storage layer is for.
-        #
-        # longhornManager is deliberately NOT pinned.
-        #
-        # It was, on the reasoning that a node without the manager is not a
-        # Longhorn node and therefore cannot hold replicas. That part is true,
-        # and it is also why nothing on the spot pool could mount a volume:
-        #
-        #   FailedAttachVolume: node.longhorn.io "gke-...-spot-..." not found
-        #
-        # Longhorn will not attach a volume to a node it has not registered, and
-        # that holds for RWX as well — the client only mounts NFS from the
-        # share-manager, but the CSI attach still names the consuming node. So
-        # the manager has to run everywhere the application can run.
-        #
-        # Replicas are kept off spot by createDefaultDiskLabeledNodes below
-        # instead: a node with no disk can mount volumes and can never store
-        # one. Same guarantee, and it no longer costs the spot pool its ability
-        # to mount.
+        # Stable pool. longhornManager is not pinned: Longhorn only attaches volumes
+        # on nodes running the manager, and the app runs on spot. Replicas stay off spot
+        # via createDefaultDiskLabeledNodes below.
         longhornDriver:
           nodeSelector:
             workload: stateful
@@ -67,88 +32,30 @@ spec:
             workload: stateful
 
         defaultSettings:
-          # V1 data engine only — Longhorn's COS documentation states that COS
-          # clusters currently support V1 data volumes.
+          # COS supports V1 data volumes only.
           v2DataEngine: false
-          # Two stateful nodes, so two replicas is the most that can be placed.
+          # One per stateful node.
           defaultReplicaCount: 2
 
-          # Tell Longhorn the cluster has an autoscaler, because it does — the
-          # spot pool is 1-3 nodes and GKE moves it.
-          #
-          # Without this Longhorn writes one instance-manager PodDisruptionBudget
-          # per node with minAvailable 1 against a single pod, so every node in
-          # the cluster reports zero allowed disruptions and cannot be drained or
-          # scaled down. Five of them existed here while Longhorn held no volumes
-          # at all; GKE's own recommender flagged it as an unpermissive PDB.
-          #
-          # With it, Longhorn keeps only the PDBs it needs: one per volume, on
-          # the node holding a protected replica, and none anywhere else.
-          #
-          # The documented cost is that a node carrying a reusable replica can be
-          # removed and the replica rebuilt. nodeDrainPolicy stays at
-          # block-if-contains-last-replica, so the last healthy replica still
-          # blocks a drain — this trades a redundant copy, never the only one.
+          # Lets Longhorn keep PDBs only for nodes holding a volume's last replica;
+          # otherwise every node gets a PDB and none can drain or scale down.
           kubernetesClusterAutoscalerEnabled: true
 
-          # Replica data goes only where the node pool says it may.
-          #
-          # Longhorn otherwise gives every new node a default disk, which makes
-          # it eligible to hold replicas. With this enabled it creates a disk
-          # only on nodes labelled node.longhorn.io/create-default-disk, which
-          # the stateful pool carries from its node_config in Terraform — so a
-          # replacement node arrives with the right answer already.
-          #
-          # This is what allows longhorn-manager to run on the spot pool. It has
-          # to: Longhorn refuses to attach a volume to a node it has not
-          # registered, RWX included, so a pool without the manager cannot mount
-          # anything. Manager everywhere, disks only here.
+          # Default disks only on nodes labelled node.longhorn.io/create-default-disk
+          # (the stateful pool, set in Terraform). Other nodes mount but never store replicas.
           createDefaultDiskLabeledNodes: true
 
-          # Set to the empty string, not removed. Removing the key does not
-          # clear the setting: Longhorn's docs say that when a setting is
-          # absent from the ConfigMap it "will use the default value in
-          # Longhorn or the customized values previously configured", and an
-          # empty string is what actually cleans it up. Deleting the line left
-          # the Setting CR reading workload:stateful with csi-plugin still
-          # pinned, and ArgoCD reported Synced/Healthy throughout — the
-          # manifest was applied, the effect was not.
+          # Empty string, not removed: a removed key keeps the previous value. Must stay
+          # unset so the CSI plugin DaemonSet runs on every node, including spot. Share
+          # Manager is pinned per StorageClass instead (manifests/longhorn).
           systemManagedComponentsNodeSelector: ""
-          #
-          # It was, as "workload:stateful", on the assumption that pinning
-          # everything Longhorn owns to the stable pool was the safe default.
-          # It is not: Longhorn's docs class the CSI Driver as a system-managed
-          # component, so that one line also pinned longhorn-csi-plugin, and a
-          # DaemonSet with a nodeSelector does not follow new nodes it excludes.
-          #
-          #   longhorn-csi-plugin   DESIRED 2   NODE SELECTOR workload=stateful
-          #
-          # The CSI node plugin is what performs the mount, on the node the
-          # consuming pod runs on. RWX exists here for the web/api tier, which
-          # runs on spot — so the one pool that had to be able to mount a
-          # Longhorn volume was the only pool that could not. Nothing on the
-          # stateful pool needs RWX at all; Postgres takes RWO.
-          #
-          # The rule this cost: placement follows the volume's CONSUMER, and
-          # anything a replaceable node needs must be a DaemonSet with no
-          # nodeSelector, because that is the only thing a new node gets by
-          # itself.
-          #
-          # Share Manager is system-managed too, and it must NOT drift onto
-          # spot — it is the NFS server for every RWX volume, so preempting it
-          # breaks every client mount. It is pinned per-StorageClass instead,
-          # with shareManagerNodeSelector; see manifests/longhorn.
 
         persistence:
-          # NOT the cluster default: pd-balanced stays default so anything that
-          # wants RWO (Postgres) gets it without knowing about Longhorn. RWX
-          # workloads ask for this class by name.
+          # Not the default class: RWO users (Postgres) get pd-balanced; RWX asks for this by name.
           defaultClass: false
           defaultClassReplicaCount: 2
 
-        # The UI has no authentication of its own — anyone who reaches it can
-        # view, back up or delete volumes. So no ingress and no LoadBalancer:
-        # it is reached over Tailscale only.
+        # The UI has no auth, so no ingress: Tailscale only.
         ingress:
           enabled: false
         service:

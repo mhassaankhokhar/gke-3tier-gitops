@@ -1,22 +1,7 @@
-# Circuit breaking — the answer to what the load test actually found.
-#
-# Under 5x overload the system did not refuse work, it queued it: p95 reached
-# 21s and one request took 52s. A client waiting a minute for a page is worse
-# off than one told "no" immediately, and a queue that deep also means pods
-# spend their capacity on requests whose callers have already given up.
-#
-# These limits make Envoy shed load instead. Past the pending-request ceiling it
-# returns 503 straight away, so failure is fast and visible rather than slow and
-# ambiguous — and the HPA still sees the CPU, so scaling is unaffected.
-#
-# One rule per host, including the canary pair. A DestinationRule applies to a
-# host, and api, api-stable, api-canary, web-stable and web-canary are five
-# different ones. Protecting only the stable host would leave the canary
-# unprotected exactly when it is taking traffic it has never handled before.
-#
-# The policy is repeated rather than shared through a YAML anchor: anchors do
-# not cross document boundaries, and an anchor that silently resolves to nothing
-# would leave a host with no limits at all.
+# Circuit breaking: past the pending-request limit Envoy returns 503 at once
+# instead of queueing (overload otherwise queued requests for 20s+).
+# One rule per host, canary hosts included. The policy is repeated, not
+# anchored, because YAML anchors don't cross documents.
 
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
@@ -28,38 +13,20 @@ spec:
     connectionPool:
       tcp:
         maxConnections: 100
-        # 250ms, not the 30ms often copied around. Same-node connections are
-        # far quicker, but a pod on another node during a scale-up is not — and
-        # a connect timeout that tight turns ordinary jitter into failures.
+        # 250ms: tolerates cross-node connects during scale-up.
         connectTimeout: 250ms
       http:
-        # The line that matters, and the one a load test proved was binding.
-        # With no ceiling requests queue without limit, which is how a
-        # 52-second response happens; past this many waiting, Envoy returns 503
-        # immediately.
-        #
-        # 50 was too low to measure anything with. At 116 req/s three of six web
-        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
-        # 12.24% failure rate that was this number, not the system's capacity.
-        # It also fed the outlier detection below: those 503s are 5xx, so
-        # endpoints were being ejected for a limit we chose.
-        #
-        # 256, so the queue stops being the answer and whatever is actually
-        # slower shows up instead. Still bounded — an unbounded queue trades a
-        # fast failure for a slow one.
+        # Bounded queue; past this Envoy returns 503 immediately. 50 was itself the
+        # bottleneck under load; 256 lets real limits show.
         http1MaxPendingRequests: 256
-        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
-        # N requests, which spreads load more evenly but throws away HTTP/1.1
-        # keep-alive and pays a handshake far too often at this request rate.
+        # Unlimited, to keep HTTP/1.1 keep-alive.
         maxRequestsPerConnection: 0
     outlierDetection:
-      # A pod failing repeatedly is pulled from the pool for 30s rather than
-      # being sent more traffic to fail.
+      # Eject a repeatedly failing pod for 30s.
       consecutive5xxErrors: 5
       interval: 10s
       baseEjectionTime: 30s
-      # Never eject more than half. Without this a widespread fault — a slow
-      # database, say — ejects every pod and turns a degradation into an outage.
+      # Never eject more than half, so a shared fault degrades instead of failing everything.
       maxEjectionPercent: 50
 ---
 apiVersion: networking.istio.io/v1
@@ -72,38 +39,15 @@ spec:
     connectionPool:
       tcp:
         maxConnections: 100
-        # 250ms, not the 30ms often copied around. Same-node connections are
-        # far quicker, but a pod on another node during a scale-up is not — and
-        # a connect timeout that tight turns ordinary jitter into failures.
+        # As above.
         connectTimeout: 250ms
       http:
-        # The line that matters, and the one a load test proved was binding.
-        # With no ceiling requests queue without limit, which is how a
-        # 52-second response happens; past this many waiting, Envoy returns 503
-        # immediately.
-        #
-        # 50 was too low to measure anything with. At 116 req/s three of six web
-        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
-        # 12.24% failure rate that was this number, not the system's capacity.
-        # It also fed the outlier detection below: those 503s are 5xx, so
-        # endpoints were being ejected for a limit we chose.
-        #
-        # 256, so the queue stops being the answer and whatever is actually
-        # slower shows up instead. Still bounded — an unbounded queue trades a
-        # fast failure for a slow one.
         http1MaxPendingRequests: 256
-        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
-        # N requests, which spreads load more evenly but throws away HTTP/1.1
-        # keep-alive and pays a handshake far too often at this request rate.
         maxRequestsPerConnection: 0
     outlierDetection:
-      # A pod failing repeatedly is pulled from the pool for 30s rather than
-      # being sent more traffic to fail.
       consecutive5xxErrors: 5
       interval: 10s
       baseEjectionTime: 30s
-      # Never eject more than half. Without this a widespread fault — a slow
-      # database, say — ejects every pod and turns a degradation into an outage.
       maxEjectionPercent: 50
 ---
 apiVersion: networking.istio.io/v1
@@ -116,38 +60,15 @@ spec:
     connectionPool:
       tcp:
         maxConnections: 100
-        # 250ms, not the 30ms often copied around. Same-node connections are
-        # far quicker, but a pod on another node during a scale-up is not — and
-        # a connect timeout that tight turns ordinary jitter into failures.
+        # As above.
         connectTimeout: 250ms
       http:
-        # The line that matters, and the one a load test proved was binding.
-        # With no ceiling requests queue without limit, which is how a
-        # 52-second response happens; past this many waiting, Envoy returns 503
-        # immediately.
-        #
-        # 50 was too low to measure anything with. At 116 req/s three of six web
-        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
-        # 12.24% failure rate that was this number, not the system's capacity.
-        # It also fed the outlier detection below: those 503s are 5xx, so
-        # endpoints were being ejected for a limit we chose.
-        #
-        # 256, so the queue stops being the answer and whatever is actually
-        # slower shows up instead. Still bounded — an unbounded queue trades a
-        # fast failure for a slow one.
         http1MaxPendingRequests: 256
-        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
-        # N requests, which spreads load more evenly but throws away HTTP/1.1
-        # keep-alive and pays a handshake far too often at this request rate.
         maxRequestsPerConnection: 0
     outlierDetection:
-      # A pod failing repeatedly is pulled from the pool for 30s rather than
-      # being sent more traffic to fail.
       consecutive5xxErrors: 5
       interval: 10s
       baseEjectionTime: 30s
-      # Never eject more than half. Without this a widespread fault — a slow
-      # database, say — ejects every pod and turns a degradation into an outage.
       maxEjectionPercent: 50
 ---
 apiVersion: networking.istio.io/v1
@@ -160,38 +81,15 @@ spec:
     connectionPool:
       tcp:
         maxConnections: 100
-        # 250ms, not the 30ms often copied around. Same-node connections are
-        # far quicker, but a pod on another node during a scale-up is not — and
-        # a connect timeout that tight turns ordinary jitter into failures.
+        # As above.
         connectTimeout: 250ms
       http:
-        # The line that matters, and the one a load test proved was binding.
-        # With no ceiling requests queue without limit, which is how a
-        # 52-second response happens; past this many waiting, Envoy returns 503
-        # immediately.
-        #
-        # 50 was too low to measure anything with. At 116 req/s three of six web
-        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
-        # 12.24% failure rate that was this number, not the system's capacity.
-        # It also fed the outlier detection below: those 503s are 5xx, so
-        # endpoints were being ejected for a limit we chose.
-        #
-        # 256, so the queue stops being the answer and whatever is actually
-        # slower shows up instead. Still bounded — an unbounded queue trades a
-        # fast failure for a slow one.
         http1MaxPendingRequests: 256
-        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
-        # N requests, which spreads load more evenly but throws away HTTP/1.1
-        # keep-alive and pays a handshake far too often at this request rate.
         maxRequestsPerConnection: 0
     outlierDetection:
-      # A pod failing repeatedly is pulled from the pool for 30s rather than
-      # being sent more traffic to fail.
       consecutive5xxErrors: 5
       interval: 10s
       baseEjectionTime: 30s
-      # Never eject more than half. Without this a widespread fault — a slow
-      # database, say — ejects every pod and turns a degradation into an outage.
       maxEjectionPercent: 50
 ---
 apiVersion: networking.istio.io/v1
@@ -204,36 +102,13 @@ spec:
     connectionPool:
       tcp:
         maxConnections: 100
-        # 250ms, not the 30ms often copied around. Same-node connections are
-        # far quicker, but a pod on another node during a scale-up is not — and
-        # a connect timeout that tight turns ordinary jitter into failures.
+        # As above.
         connectTimeout: 250ms
       http:
-        # The line that matters, and the one a load test proved was binding.
-        # With no ceiling requests queue without limit, which is how a
-        # 52-second response happens; past this many waiting, Envoy returns 503
-        # immediately.
-        #
-        # 50 was too low to measure anything with. At 116 req/s three of six web
-        # pods sat at exactly 50 pending and the overflow ran at 7.6/s — a
-        # 12.24% failure rate that was this number, not the system's capacity.
-        # It also fed the outlier detection below: those 503s are 5xx, so
-        # endpoints were being ejected for a limit we chose.
-        #
-        # 256, so the queue stops being the answer and whatever is actually
-        # slower shows up instead. Still bounded — an unbounded queue trades a
-        # fast failure for a slow one.
         http1MaxPendingRequests: 256
-        # 0 = unlimited. Capping it (jendy uses 10) closes the connection every
-        # N requests, which spreads load more evenly but throws away HTTP/1.1
-        # keep-alive and pays a handshake far too often at this request rate.
         maxRequestsPerConnection: 0
     outlierDetection:
-      # A pod failing repeatedly is pulled from the pool for 30s rather than
-      # being sent more traffic to fail.
       consecutive5xxErrors: 5
       interval: 10s
       baseEjectionTime: 30s
-      # Never eject more than half. Without this a widespread fault — a slow
-      # database, say — ejects every pod and turns a degradation into an outage.
       maxEjectionPercent: 50

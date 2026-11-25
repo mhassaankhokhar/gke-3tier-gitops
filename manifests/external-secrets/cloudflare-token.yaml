@@ -1,15 +1,6 @@
-# Projects the Cloudflare API token from GCP Secret Manager into the namespaces
-# that consume it.
-#
-# The ClusterSecretStore these reference is NOT here — it is installed by
-# Terraform as part of the cluster seed, because External Secrets has to be
-# working before ArgoCD can read this repository at all.
-#
-# The token is never in Git and never in Terraform state. Rotating it means
-# adding a new Secret Manager version; nothing in this file changes.
-# One ExternalSecret per consuming namespace: a Kubernetes Secret is
-# namespace-scoped, and both external-dns and cert-manager need to read it from
-# their own namespace.
+# Cloudflare API token from Secret Manager, one ExternalSecret per consuming
+# namespace (external-dns, cert-manager). The ClusterSecretStore is in the
+# Terraform seed. Rotate by adding a Secret Manager version.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

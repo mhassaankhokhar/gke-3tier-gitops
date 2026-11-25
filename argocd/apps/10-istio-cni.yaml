@@ -1,25 +1,5 @@
-# Istio, part 2 of 3: the CNI node agent.
-#
-# Optional in sidecar mode, and installed anyway, for one reason: without it
-# every injected pod gets an `istio-init` container that needs NET_ADMIN and
-# NET_RAW to write the iptables rules that redirect traffic into Envoy. That is
-# a privileged container in every application namespace, and it is incompatible
-# with a `restricted` Pod Security Admission label. The node agent does the same
-# work once per node instead.
-#
-# Two GKE-specific settings, both from Istio's platform prerequisites — neither
-# is a workaround, both are documented:
-#
-#   global.platform=gke   GKE keeps its CNI binaries in a nonstandard location,
-#                         so the chart's default paths do not find them.
-#
-# Setting it does more than fix a path. The chart's GKE profile
-# (files/profile-platform-gke.yaml) also turns on resourceQuotas, because GKE
-# only allows system-node-critical pods in namespaces that define a quota for
-# that priority class and by default only kube-system has one. The agent runs as
-# node-critical, so without that quota its DaemonSet reports desired pods and
-# creates none — no error, no event, just nothing happening. The chart writes
-# the quota, so nothing here should.
+# Istio, part 2 of 3: the CNI node agent. Replaces the privileged istio-init
+# container (NET_ADMIN, NET_RAW) in every pod with one agent per node.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -35,39 +15,14 @@ spec:
     targetRevision: 1.30.4
     helm:
       values: |
-        # global.platform=gke is deliberately NOT set, even though Istio's GKE
-        # prerequisites tell you to. On this cluster it makes things worse, and
-        # the two settings below are exactly what it would have given us.
-        #
-        # What the platform profile does is set cniBinDir back to "" so the
-        # chart can autodetect the path, and turn on its ResourceQuota. The
-        # autodetection reads the API server's version:
-        #
-        #   $detectedBinDir := (.Capabilities.KubeVersion.GitVersion
-        #                        | contains "-gke") ? "/home/kubernetes/bin"
-        #                                           : "/opt/cni/bin"
-        #
-        # Argo CD renders with `helm template`, where KubeVersion is not the
-        # live cluster's, so the "-gke" in v1.35.6-gke.1710000 never reaches the
-        # template and it falls through to /opt/cni/bin — read-only on
-        # Container-Optimized OS. The agent crashlooped on all three nodes.
-        #
-        # Setting the platform AND an explicit cniBinDir does not fix it: the
-        # profile wins and blanks the value again. Rendered locally to confirm —
-        #
-        #   cniBinDir alone            -> /home/kubernetes/bin
-        #   platform=gke + cniBinDir   -> /opt/cni/bin
-        #
-        # So the profile is dropped and its two effects are written out. A
-        # rendering-time capability check is not something GitOps can satisfy;
-        # the path is a fixed property of GKE, so it belongs in the manifest.
+        # global.platform=gke is not set: its bin-dir autodetection needs the live
+        # KubeVersion, which Argo CD's `helm template` doesn't have, so it falls back to
+        # /opt/cni/bin (read-only on COS). The profile also overrides an explicit
+        # cniBinDir. Its two effects are set directly: this path and resourceQuotas below.
         cniBinDir: /home/kubernetes/bin
 
-        # The other half of the GKE profile. GKE refuses to schedule
-        # system-node-critical pods into a namespace with no quota for that
-        # priority class — by default only kube-system has one — and this agent
-        # is node-critical. Without it the DaemonSet reports desired pods and
-        # creates none: no error, no event, nothing happening.
+        # GKE schedules system-node-critical pods only in namespaces with a quota for
+        # that priority class; without it the DaemonSet silently creates no pods.
         resourceQuotas:
           enabled: true
 

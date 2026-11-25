@@ -1,16 +1,6 @@
-# istio-system, and nothing else.
-#
-# The ResourceQuota GKE requires is deliberately NOT here. GKE will not schedule
-# system-node-critical pods into a namespace without a quota for that priority
-# class, and Istio's CNI node agent runs as node-critical — but setting
-# global.platform=gke makes the chart create that quota itself. Its GKE profile
-# sets resourceQuotas.enabled: true and leaves cniBinDir empty so the chart
-# autodetects GKE's nonstandard CNI path.
-#
-# Writing the quota here as well would give one object two owners, which is the
-# same mistake that had Terraform and Argo CD fighting over Argo CD's own Helm
-# release. The namespace stays, because a namespace is not something a chart
-# should own — three charts install into this one.
+# istio-system only. The ResourceQuota GKE requires for node-critical pods is
+# created by the istio-cni chart (resourceQuotas.enabled in 10-istio-cni.yaml),
+# so it isn't duplicated here.
 apiVersion: v1
 kind: Namespace
 metadata:

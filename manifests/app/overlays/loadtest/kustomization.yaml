@@ -1,15 +1,5 @@
-# The dev overlay, plus a load generator's identity. Nothing else.
-#
-# It used to build on the base and pin both tiers to one replica, because the
-# question then was "what does a single replica pair serve" — a per-replica
-# number to multiply. That number exists now, and the question has changed: what
-# does the deployment as it actually runs serve, on the nodes it actually has.
-#
-# So this builds on ../dev rather than ../../base. Every difference between the
-# two is exactly one thing — the k6 ServiceAccount and the policy that lets it
-# reach web — and a change to dev cannot silently fail to reach the thing being
-# measured. Pinning replicas here is what made an earlier run measure an overlay
-# nobody meant to test.
+# The dev overlay plus the load generator's identity, nothing else, so the
+# test measures the deployment as it runs.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

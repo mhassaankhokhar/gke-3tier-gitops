@@ -1,18 +1,5 @@
-# Istio, part 1 of 3: the CRDs and the mesh's cluster-scoped resources.
-#
-# Split across three Applications because the order is real, not cosmetic:
-#
-#   base  →  CRDs and the ClusterRole istiod needs to exist first
-#   cni   →  the node agent that programs pod networking
-#   istiod →  the control plane, which fails to start without base's CRDs
-#
-# Sidecar mode, not ambient. Ambient is lighter — no per-pod Envoy — and would
-# suit a spot pool better, but sidecar is what this project is here to learn:
-# the injection mechanics, Envoy itself, and the startup ordering problems that
-# come with putting a proxy in front of every process.
-#
-# Pinned like everything else. Argo CD reconciles on its own schedule, so an
-# unpinned chart can install something nobody reviewed.
+# Istio, part 1 of 3: CRDs and cluster-scoped resources. Then cni, then
+# istiod (which needs these CRDs). Sidecar mode, not ambient.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -32,25 +19,14 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
-  # istiod writes its CA certificate into this webhook after the chart creates
-  # it, and the chart ships no caBundle at all — verified by rendering it. So
-  # the live object always carries a field Git does not, and the Application
-  # sits permanently OutOfSync while being entirely correct.
-  #
-  # Ignored rather than papered over with selfHeal off: selfHeal would keep
-  # blanking the field istiod just wrote, and blanking it breaks validation of
-  # every Istio resource until istiod notices and writes it back.
+  # istiod writes the caBundle into this webhook at runtime; the chart ships
+  # none, so it is ignored rather than reverted (reverting breaks validation).
   ignoreDifferences:
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration
       jsonPointers:
         - /webhooks/0/clientConfig/caBundle
-        # Same class of field, second instance. The chart ships
-        # failurePolicy: Ignore so that a cluster whose istiod is not up yet can
-        # still accept Istio resources; istiod switches it to Fail once it is
-        # ready to validate them. Reverting that would quietly turn off
-        # validation — invalid Istio config would be accepted and simply not
-        # work.
+        # istiod switches this from Ignore to Fail once ready; reverting disables validation.
         - /webhooks/0/failurePolicy
   syncPolicy:
     automated:

@@ -1,10 +1,5 @@
-# Cluster-wide configuration that depends on operators already being present:
-# the ACME issuers (cert-manager's CRDs), the proxy placement policy
-# (Tailscale's), and Argo CD's own certificate.
-#
-# Wave 0 — after cert-manager (-2) and the Tailscale operator (-1), so every CRD
-# these objects use exists. Individual objects carry their own sync-wave where
-# order matters between them: issuers before the certificate that references one.
+# Config that needs operator CRDs: ACME issuers, the Tailscale ProxyClass,
+# Argo CD's certificate. Wave 0, after cert-manager and Tailscale.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -20,9 +15,7 @@ spec:
     path: manifests/platform
   destination:
     server: https://kubernetes.default.svc
-    # Only a default for objects that do not name their own namespace; the
-    # ClusterIssuers and ProxyClass are cluster-scoped and the Certificate names
-    # the argocd namespace itself.
+    # Default only; these objects are cluster-scoped or name their namespace.
     namespace: cert-manager
   syncPolicy:
     automated:

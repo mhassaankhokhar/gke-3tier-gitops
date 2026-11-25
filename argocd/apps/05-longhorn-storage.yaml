@@ -1,15 +1,6 @@
-# What the application tier needs from Longhorn, as opposed to what Longhorn
-# needs to run — wave 2, so the chart's CRDs and controllers already exist.
-#
-# Two objects, both consequences of the same fact: the pool that consumes RWX is
-# the pool that can disappear.
-#
-#   nfs-module-loader   the NFS client module on every node, spot included
-#   longhorn-rwx        the class the app asks for, with the NFS server pinned
-#                       to the stable pool
-#
-# Raw manifests rather than a chart: two cluster-specific objects, and wrapping
-# them would add a layer with nothing in it.
+# What the app needs from Longhorn, wave 2 (after the chart's CRDs):
+#   nfs-module-loader  NFS client module on every node, spot included
+#   longhorn-rwx       the app's RWX class, NFS server pinned to the stable pool
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

@@ -1,13 +1,5 @@
-# Grafana dashboards, kept in Git.
-#
-# Wave 7 — after the monitoring stack (6), because these are only useful once
-# Grafana and its dashboard sidecar exist. Nothing breaks if they arrive first;
-# the sidecar watches, so it would pick them up whenever it starts.
-#
-# Separate Application rather than part of 17-monitoring because that one is a
-# Helm chart and this is a directory of manifests. An Argo CD Application has one
-# source, and mixing the two would mean giving up either the chart's values or
-# Kustomize.
+# Grafana dashboards from Git, wave 7 (after monitoring). Separate from
+# 17-monitoring because an Application has one source: chart vs directory.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
